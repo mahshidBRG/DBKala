@@ -110,3 +110,16 @@ JOIN Address a
 JOIN Branch_manager m
   ON m.name = NULLIF(trim(r.manager_name), '')
 WHERE NULLIF(trim(r.branch_name), '') IS NOT NULL;
+
+
+-- Insert into Supplier table --
+INSERT INTO Supplier(name, phone, address_id)
+SELECT DISTINCT
+  NULLIF(trim(r.supplier_name), '') AS name,
+  NULLIF(trim(r.supplier_phone), '') AS phone,
+  a.address_id
+FROM stg.branch_product_suppliers_raw r
+LEFT JOIN Address a
+  ON a.recipient_address = NULLIF(trim(r.supplier_address), '')
+ AND a.city IS NULL AND a.region IS NULL AND a.zip_code IS NULL
+WHERE NULLIF(trim(r.supplier_name), '') IS NOT NULL;
