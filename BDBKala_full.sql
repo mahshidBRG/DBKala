@@ -19,7 +19,7 @@ CREATE TABLE BDBKala_full (
   shipping_cost DECIMAL(18, 5),
   region VARCHAR(255),
   city VARCHAR(255),
-  zip_code INT,
+  zip_code VARCHAR(10),
   ratings VARCHAR(10),
   customer_segment VARCHAR(255),
   customer_name VARCHAR(255),
@@ -29,3 +29,6 @@ CREATE TABLE BDBKala_full (
   gender VARCHAR(255),
   income DECIMAL(18, 5)
 );
+
+
+-- Import data by pgAdmin import CSV
