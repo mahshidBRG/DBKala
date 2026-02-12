@@ -100,3 +100,14 @@ ALTER COLUMN region DROP NOT NULL;
 -- drop NOT NULL for zip_code
 ALTER TABLE Address 
 ALTER COLUMN zip_code DROP NOT NULL;
+
+
+-- Editing data type of phone columns
+ALTER TABLE Customer 
+ALTER COLUMN phone TYPE VARCHAR(21);
+
+ALTER TABLE Supplier 
+ALTER COLUMN phone TYPE VARCHAR(21);
+
+ALTER TABLE Branch 
+ALTER COLUMN phone TYPE VARCHAR(21);

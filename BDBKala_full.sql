@@ -25,7 +25,7 @@ CREATE TABLE BDBKala_full (
   customer_name VARCHAR(200),
   customer_age INT,
   email VARCHAR(254),
-  phone VARCHAR(20),
+  phone VARCHAR(21),
   gender VARCHAR(6),
   income NUMERIC(12, 2)
 );
