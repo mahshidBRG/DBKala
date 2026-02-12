@@ -87,3 +87,16 @@ ALTER TABLE Ordere
 ADD CONSTRAINT ordere_status_check 
 CHECK (status IN ('Unknown', 'Shipped', 'Received', 'Stocking', 'Pending Payment'));
 
+
+
+-- drop NOT NULL for city
+ALTER TABLE Address 
+ALTER COLUMN city DROP NOT NULL;
+
+-- drop NOT NULL for region
+ALTER TABLE Address 
+ALTER COLUMN region DROP NOT NULL;
+
+-- drop NOT NULL for zip_code
+ALTER TABLE Address 
+ALTER COLUMN zip_code DROP NOT NULL;
