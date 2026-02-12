@@ -1,7 +1,6 @@
-INSERT INTO Category (name, parent_category_id)
+INSERT INTO Category (name)
 SELECT DISTINCT
-    category,
-    NULL
+    category
 FROM products_properties
 WHERE category IS NOT NULL
   AND NOT EXISTS (
@@ -25,4 +24,74 @@ WHERE pp.sub_category IS NOT NULL
       FROM Category sub
       WHERE sub.name = pp.sub_category
         AND sub.parent_category_id = c.category_id
+  );
+
+INSERT INTO Branch_manager(name)
+SELECT DISTINCT trim(r.manager_name)
+FROM branch_product_suppliers r
+WHERE r.manager_name IS NOT NULL
+  AND trim(r.manager_name) <> ''
+  AND NOT EXISTS (
+    SELECT 1
+    FROM branch_manager bm
+    WHERE bm.name = trim(r.manager_name)
+  );
+
+-- Insert unique shipping addresses from the main BDBkala_full staging table (city/region/zip taken from dataset; invalid region -> NULL)
+INSERT INTO Address(recipient_address, city, region, zip_code)
+SELECT DISTINCT
+  NULLIF(trim(s.shipping_address),'') AS recipient_address,
+  NULLIF(trim(s.city),'') AS city,
+  CASE
+    WHEN NULLIF(trim(s.region),'') IN ('East','West','Central','South','North')
+      THEN NULLIF(trim(s.region),'')
+    ELSE NULL
+  END AS region,
+  NULLIF(trim(s.zip_code),'') AS zip_code
+FROM bdbkala_full s
+WHERE NULLIF(trim(s.shipping_address),'') IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM Address a
+    WHERE a.recipient_address = NULLIF(trim(s.shipping_address),'')
+      AND COALESCE(a.city,'') = COALESCE(NULLIF(trim(s.city),''),'')
+      AND COALESCE(a.region,'') = COALESCE(
+            CASE
+              WHEN NULLIF(trim(s.region),'') IN ('East','West','Central','South','North')
+                THEN NULLIF(trim(s.region),'')
+              ELSE NULL
+            END,'')
+      AND COALESCE(a.zip_code,'') = COALESCE(NULLIF(trim(s.zip_code),''),'')
+  );
+
+-- Insert unique branch addresses from branch_product_suppliers staging table (only address string exists -> city/region/zip stored as NULL)
+INSERT INTO Address(recipient_address, city, region, zip_code)
+SELECT DISTINCT
+  NULLIF(trim(r.address),'') AS recipient_address,
+  NULL, NULL, NULL
+FROM branch_product_suppliers r
+WHERE NULLIF(trim(r.address),'') IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM Address a
+    WHERE a.recipient_address = NULLIF(trim(r.address),'')
+      AND a.city IS NULL
+      AND a.region IS NULL
+      AND a.zip_code IS NULL
+  );
+
+-- Insert unique supplier addresses from branch_product_suppliers staging table (only supplier_address string exists -> city/region/zip stored as NULL)
+INSERT INTO Address(recipient_address, city, region, zip_code)
+SELECT DISTINCT
+  NULLIF(trim(r.supplier_address),'') AS recipient_address,
+  NULL, NULL, NULL
+FROM branch_product_suppliers r
+WHERE NULLIF(trim(r.supplier_address),'') IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM Address a
+    WHERE a.recipient_address = NULLIF(trim(r.supplier_address),'')
+      AND a.city IS NULL
+      AND a.region IS NULL
+      AND a.zip_code IS NULL
   );
