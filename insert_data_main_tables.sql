@@ -95,3 +95,18 @@ WHERE NULLIF(trim(r.supplier_address),'') IS NOT NULL
       AND a.region IS NULL
       AND a.zip_code IS NULL
   );
+
+-- Insert data into Branch table --
+INSERT INTO Branch(name, phone, address_id, manager_id)
+SELECT DISTINCT
+  NULLIF(trim(r.branch_name), '') AS name,
+  NULLIF(trim(r.phone), '') AS phone,
+  a.address_id,
+  m.manager_id
+FROM branch_product_suppliers r
+JOIN Address a
+  ON a.recipient_address = NULLIF(trim(r.address), '')
+ AND a.city IS NULL AND a.region IS NULL AND a.zip_code IS NULL
+JOIN Branch_manager m
+  ON m.name = NULLIF(trim(r.manager_name), '')
+WHERE NULLIF(trim(r.branch_name), '') IS NOT NULL;
