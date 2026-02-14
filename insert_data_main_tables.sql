@@ -118,7 +118,7 @@ SELECT DISTINCT
   NULLIF(trim(r.supplier_name), '') AS name,
   NULLIF(trim(r.supplier_phone), '') AS phone,
   a.address_id
-FROM stg.branch_product_suppliers_raw r
+FROM branch_product_suppliers r
 LEFT JOIN Address a
   ON a.recipient_address = NULLIF(trim(r.supplier_address), '')
  AND a.city IS NULL AND a.region IS NULL AND a.zip_code IS NULL
