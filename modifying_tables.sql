@@ -87,7 +87,9 @@ ALTER TABLE Ordere
 ADD CONSTRAINT ordere_status_check 
 CHECK (status IN ('Unknown', 'Shipped', 'Received', 'Stocking', 'Pending Payment'));
 
-
+-- implementing the possibility of null rating
+ALTER TABLE feedback
+ALTER COLUMN rating DROP NOT NULL;
 
 -- drop NOT NULL for city
 ALTER TABLE Address 
