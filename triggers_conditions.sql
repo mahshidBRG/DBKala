@@ -55,6 +55,33 @@ FOR EACH ROW
 EXECUTE FUNCTION prevent_order_date_update();
 
 
+-- Ensures shipping_date is on or after the related order_date.
+-- Prevents shipping before the order is registered.
+CREATE OR REPLACE FUNCTION trg_check_shipping_date()
+RETURNS TRIGGER AS $$
+DECLARE
+    ord_date DATE;
+BEGIN
+
+    SELECT order_date INTO ord_date
+    FROM Ordere
+    WHERE order_id = NEW.order_id;
+
+    IF NEW.shipping_date < ord_date THEN
+        RAISE EXCEPTION 
+        'Shipping date cannot be before order date!';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER check_shipping_date
+BEFORE INSERT OR UPDATE ON shipment
+FOR EACH ROW
+EXECUTE FUNCTION trg_check_shipping_date();
+
+
 
 -- 3 - The condition of the orders must always be clear and consistent with logic.
 
@@ -110,4 +137,48 @@ EXECUTE FUNCTION trg_validate_order_status();
 
 
 
+-- 4- Order priority may not be Critical for small business customers with low incomes.
 
+-- Trigger ensures Small Business customers with low income
+-- cannot have Critical priority on orders.
+CREATE OR REPLACE FUNCTION trg_check_small_business_priority()
+RETURNS TRIGGER AS $$
+DECLARE
+    cust_type VARCHAR(50);
+    cust_income NUMERIC;
+BEGIN
+    -- customer informations
+    SELECT customer_type INTO cust_type
+    FROM Customer
+    WHERE customer_id = NEW.customer_id;
+
+    IF cust_type = 'Small Business' AND NEW.priority = 'Critical' THEN  
+        RAISE EXCEPTION 'Priority cannot be Critical for Small Business customers with low income!';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_small_business_priority
+BEFORE INSERT OR UPDATE ON Ordere
+FOR EACH ROW
+EXECUTE FUNCTION trg_check_small_business_priority();
+
+
+-- 5- It is not possible to send large envelopes by air (post or freight). Boxes should not be sent by ground.
+
+ALTER TABLE shipment
+ADD CONSTRAINT chk_shipping_rules
+CHECK (
+    (
+        packaging_type = 'Envelope'
+        AND packaging_size = 'Large'
+        AND transport_method NOT IN ('Air (Post)', 'Air (Freight)')
+    )
+    OR
+    (
+        packaging_type = 'Box'
+        AND transport_method <> 'Ground'
+    )
+);
