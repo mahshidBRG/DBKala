@@ -302,7 +302,180 @@ ALTER TABLE Branch
 ADD CONSTRAINT uq_branch_manager UNIQUE (manager_id);
 
 -- 8
- 
+ ALTER TABLE branch_product
+ADD COLUMN branch_product_id BIGSERIAL;
+
+-- Make it the primary key
+ALTER TABLE branch_product
+ADD CONSTRAINT pk_branch_product_id PRIMARY KEY (branch_product_id);
+
+-- Ensure branch/product pair remains unique
+ALTER TABLE branch_product
+ADD CONSTRAINT uq_branch_product_pair UNIQUE (branch_id, product_id);
+
+-- Drop old FK then re-add with ON DELETE SET NULL
+ALTER TABLE branch_product DROP CONSTRAINT branch_product_branch_id_fkey;
+
+ALTER TABLE branch_product
+ALTER COLUMN branch_id DROP NOT NULL;
+
+ALTER TABLE branch_product
+ADD CONSTRAINT branch_product_branch_id_fkey
+FOREIGN KEY (branch_id) REFERENCES branch(branch_id)
+ON DELETE SET NULL;
+
+-- adjust refrences to Branch_product(branch_id,product_id)
+-- Add new column
+ALTER TABLE supply ADD COLUMN branch_product_id INTEGER;
+
+-- Populate it by joining with Branch_product using branch_id and product_id
+UPDATE supply s
+SET branch_product_id = bp.branch_product_id
+FROM Branch_product bp
+WHERE s.branch_id = bp.branch_id AND s.product_id = bp.product_id;
+
+-- Make it NOT NULL after population (assuming all existing rows match)
+ALTER TABLE supply ALTER COLUMN branch_product_id SET NOT NULL;
+
+-- Drop the old composite FK constraint (if named, otherwise find its name)
+-- You may need to look up the constraint name; we'll assume default naming
+ALTER TABLE supply DROP CONSTRAINT supply_branch_id_fkey CASCADE;  -- drops FK to branch_product
+-- Also drop the PK if it used these columns (supply PK is (supplier_id, branch_id, product_id))
+ALTER TABLE supply DROP CONSTRAINT supply_pkey CASCADE;
+
+-- Drop the now redundant columns branch_id and product_id
+ALTER TABLE supply DROP COLUMN branch_id, DROP COLUMN product_id;
+
+-- Add new FK to Branch_product
+ALTER TABLE supply ADD CONSTRAINT supply_branch_product_id_fkey
+    FOREIGN KEY (branch_product_id) REFERENCES Branch_product(branch_product_id) ON DELETE CASCADE;
+
+-- Recreate primary key using supplier_id and branch_product_id
+ALTER TABLE supply ADD PRIMARY KEY (supplier_id, branch_product_id);
+
+-- First, add branch_product_id to order_item
+ALTER TABLE order_item ADD COLUMN branch_product_id INTEGER;
+
+-- Populate
+UPDATE order_item oi
+SET branch_product_id = bp.branch_product_id
+FROM Branch_product bp
+WHERE oi.branch_id = bp.branch_id AND oi.product_id = bp.product_id;
+
+ALTER TABLE order_item ALTER COLUMN branch_product_id SET NOT NULL;
+
+-- Drop foreign key constraints that reference order_item (from feedback and return_request)
+ALTER TABLE feedback DROP CONSTRAINT fk_feedback_order_item CASCADE;
+ALTER TABLE return_request DROP CONSTRAINT fk_return_request_order_item CASCADE;
+
+-- Drop order_item's own foreign key to Branch_product
+ALTER TABLE order_item DROP CONSTRAINT fk_order_item_branch_product CASCADE;
+
+-- Drop the old PK constraint on order_item
+ALTER TABLE order_item DROP CONSTRAINT order_item_pkey CASCADE;
+
+-- Drop the now redundant columns branch_id and product_id from order_item
+ALTER TABLE order_item DROP COLUMN branch_id, DROP COLUMN product_id;
+
+-- Add new PK on order_item (order_id, branch_product_id)
+ALTER TABLE order_item ADD PRIMARY KEY (order_id, branch_product_id);
+
+-- Add FK to Branch_product
+ALTER TABLE order_item ADD CONSTRAINT fk_order_item_branch_product
+    FOREIGN KEY (branch_product_id) REFERENCES Branch_product(branch_product_id) ON DELETE RESTRICT;
+
+-- Now update feedback table to use the new composite key
+-- feedback currently has (order_id, branch_id, product_id) as PK and FK.
+-- We need to replace that with (order_id, branch_product_id).
+ALTER TABLE feedback ADD COLUMN branch_product_id INTEGER;
+
+-- Populate feedback.branch_product_id
+UPDATE feedback f
+SET branch_product_id = oi.branch_product_id
+FROM order_item oi
+WHERE f.order_id = oi.order_id AND f.branch_id = oi.old_branch_id? Wait, we removed branch_id from order_item.
+-- This is tricky: we need to map feedback's old (order_id, branch_id, product_id) to the new order_item's (order_id, branch_product_id).
+-- Since we lost branch_id and product_id in order_item, we must temporarily keep them or use a mapping table.
+-- Better approach: before dropping columns from order_item, we could create a temporary mapping table or keep old columns until after updating feedback.
+-- Let's do a safer migration:
+
+-- Instead of dropping columns immediately, keep them until feedback is updated.
+-- So we'll modify order_item in a way that preserves old columns until we've updated referencing tables.
+
+-- Rollback previous order_item changes to a safer point. We'll restart this step carefully.
+
+-- Actually, we can perform updates using the old columns while they still exist. Let's reorder:
+
+-- 1. Add branch_product_id to order_item, populate, set NOT NULL.
+-- 2. Add branch_product_id to feedback and return_request, populate using join with order_item on (order_id, branch_id, product_id).
+-- 3. Drop old FK constraints from feedback/return_request.
+-- 4. Drop old PK from order_item, add new PK.
+-- 5. Drop old columns from order_item.
+
+-- Let's execute:
+
+-- Add branch_product_id to order_item (already done above, but ensure it's there)
+-- If not, add:
+ALTER TABLE order_item ADD COLUMN branch_product_id INTEGER;
+UPDATE order_item oi SET branch_product_id = bp.branch_product_id
+FROM Branch_product bp WHERE oi.branch_id = bp.branch_id AND oi.product_id = bp.product_id;
+ALTER TABLE order_item ALTER COLUMN branch_product_id SET NOT NULL;
+
+-- Now add branch_product_id to feedback and populate
+ALTER TABLE feedback ADD COLUMN branch_product_id INTEGER;
+UPDATE feedback f
+SET branch_product_id = oi.branch_product_id
+FROM order_item oi
+WHERE f.order_id = oi.order_id AND f.branch_id = oi.branch_id AND f.product_id = oi.product_id;
+ALTER TABLE feedback ALTER COLUMN branch_product_id SET NOT NULL;
+
+-- Similarly for return_request
+ALTER TABLE return_request ADD COLUMN branch_product_id INTEGER;
+UPDATE return_request rr
+SET branch_product_id = oi.branch_product_id
+FROM order_item oi
+WHERE rr.order_id = oi.order_id AND rr.branch_id = oi.branch_id AND rr.product_id = oi.product_id;
+ALTER TABLE return_request ALTER COLUMN branch_product_id SET NOT NULL;
+
+-- Now drop old FK constraints from feedback and return_request that reference order_item
+ALTER TABLE feedback DROP CONSTRAINT fk_feedback_order_item CASCADE;
+ALTER TABLE return_request DROP CONSTRAINT fk_return_request_order_item CASCADE;
+
+-- Drop old PK constraints from feedback and return_request (they use (order_id, branch_id, product_id))
+ALTER TABLE feedback DROP CONSTRAINT feedback_pkey CASCADE;
+ALTER TABLE return_request DROP CONSTRAINT return_request_pkey CASCADE;
+
+-- Drop old columns branch_id and product_id from feedback and return_request
+ALTER TABLE feedback DROP COLUMN branch_id, DROP COLUMN product_id;
+ALTER TABLE return_request DROP COLUMN branch_id, DROP COLUMN product_id;
+
+-- Add new PK for feedback (order_id, branch_product_id)
+ALTER TABLE feedback ADD PRIMARY KEY (order_id, branch_product_id);
+
+-- Add new PK for return_request (order_id, branch_product_id)
+ALTER TABLE return_request ADD PRIMARY KEY (order_id, branch_product_id);
+
+-- Re-add foreign keys to order_item
+ALTER TABLE feedback ADD CONSTRAINT fk_feedback_order_item
+    FOREIGN KEY (order_id, branch_product_id) REFERENCES order_item(order_id, branch_product_id) ON DELETE CASCADE;
+ALTER TABLE return_request ADD CONSTRAINT fk_return_request_order_item
+    FOREIGN KEY (order_id, branch_product_id) REFERENCES order_item(order_id, branch_product_id) ON DELETE CASCADE;
+
+-- Now drop order_item's FK to Branch_product (old one) and its old PK, then add new PK and FK
+ALTER TABLE order_item DROP CONSTRAINT fk_order_item_branch_product CASCADE;
+ALTER TABLE order_item DROP CONSTRAINT order_item_pkey CASCADE;
+
+-- Drop old columns branch_id and product_id from order_item
+ALTER TABLE order_item DROP COLUMN branch_id, DROP COLUMN product_id;
+
+-- Add new PK
+ALTER TABLE order_item ADD PRIMARY KEY (order_id, branch_product_id);
+
+-- Add new FK to Branch_product
+ALTER TABLE order_item ADD CONSTRAINT fk_order_item_branch_product
+    FOREIGN KEY (branch_product_id) REFERENCES Branch_product(branch_product_id) ON DELETE RESTRICT;
+
+    
 -- 9
 ALTER TABLE order_item
 ALTER COLUMN return_status SET DEFAULT 'Return Pending Review';
