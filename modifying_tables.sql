@@ -17,7 +17,6 @@ ALTER TABLE Customer
 ADD COLUMN VAT_exemption_percent NUMERIC(3,2);
 
 
-
 -- changing the allowed delivery method(shipping method) values according to the dataset data
 ALTER TABLE shipment 
 DROP CONSTRAINT shipment_delivery_type_check;
@@ -78,6 +77,10 @@ ADD CONSTRAINT ordere_payment_method_check
 CHECK (payment_method IN ('Cash', 'Credit Card', 'Debit Card', 'BNPL', 'In-App Wallet'));
 
 
+-- Adding cost price of supply at order time to access the cost of supplying goods 
+-- and facilitate profit calculation
+ALTER TABLE order_item
+ADD COLUMN cost_price_at_order_time NUMERIC(12,2) NOT NULL;
 
 -- changing the allowed order_status values according to the dataset data
 ALTER TABLE Ordere 
