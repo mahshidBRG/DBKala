@@ -581,3 +581,125 @@ EXECUTE FUNCTION fn_enforce_return_status_flow();
 ALTER TABLE feedback
 ADD CONSTRAINT chk_feedback_comment_len
 CHECK (comment_text IS NULL OR char_length(comment_text) <= 800);
+
+
+-- Additional compatibility conditions‌:
+
+-- 1- Automatic Order Refund Rule upon Approved Return
+
+-- If the new value becomes 'Approved' and was not previously approved:
+-- - The refund amount is calculated as:
+-- -- quantity × final_price_at_order_time
+
+-- - The payment method of the order is checked.
+-- - If the payment method is not BNPL:
+-- -- The refund amount is credited to the customer's wallet.
+-- -- A 'Deposit' record is inserted into wallet_transaction.
+
+-- If the payment method is BNPL:
+-- - No wallet refund is issued, since the customer has not yet paid the full amount. The outstanding balance is handled dynamically.
+
+'Return Pending Review', 'Return Approved', 'Return Rejected'
+'Unknown', 'Shipped', 'Received', 'Stocking', 'Pending Payment'
+
+CCREATE OR REPLACE FUNCTION trg_refund_after_return()
+RETURNS TRIGGER AS $$
+DECLARE
+    refund_amount NUMERIC;
+    cust_id INT;
+    pay_method VARCHAR(20);
+    w_id INT;
+BEGIN
+
+    IF NEW.review_results = 'Return Approved'
+       AND (OLD.review_results IS DISTINCT FROM 'Return Approved') THEN 
+
+        SELECT quantity * final_price_at_order_time
+        INTO refund_amount
+        FROM order_item
+        WHERE order_id = NEW.order_id
+          AND branch_id = NEW.branch_id
+          AND product_id = NEW.product_id;
+
+        SELECT o.customer_id, o.payment_method
+        INTO cust_id, pay_method
+        FROM Ordere o
+        WHERE o.order_id = NEW.order_id;
+
+        IF pay_method <> 'BNPL' THEN
+
+            SELECT wallet_id INTO w_id
+            FROM Wallet
+            WHERE customer_id = cust_id;
+
+            INSERT INTO Wallet_transaction(
+                wallet_id,
+                amount,
+                transaction_type
+            )
+            VALUES (
+                w_id,
+                refund_amount,
+                'Deposit'
+            );
+
+        END IF;
+
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER refund_after_return
+AFTER UPDATE OF review_results
+ON return_request
+FOR EACH ROW
+EXECUTE FUNCTION trg_refund_after_return();
+
+
+
+-- 2- Wallet balance must always reflect the net effect of wallet transactions.
+-- If the transaction is deposit, it will be added to the balance.
+-- If the transaction is payment or withdrawal, it will be deducted from the balance.
+CREATE OR REPLACE FUNCTION trg_wallet_balance_sync()
+RETURNS TRIGGER AS $$
+BEGIN
+
+    IF NEW.transaction_type = 'Deposit' THEN
+        UPDATE Wallet
+        SET balance = balance + NEW.amount
+        WHERE wallet_id = NEW.wallet_id;
+
+    ELSIF NEW.transaction_type IN ('Payment','Withdrawal') THEN
+        UPDATE Wallet
+        SET balance = balance - NEW.amount
+        WHERE wallet_id = NEW.wallet_id;
+
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER wallet_balance_after_insert
+AFTER INSERT
+ON Wallet_transaction
+FOR EACH ROW
+EXECUTE FUNCTION trg_wallet_balance_sync();
+
+-- Wallet transactions are defined as immutable to preserve financial integrity and auditability.
+CREATE OR REPLACE FUNCTION trg_prevent_wallet_tx_modification()
+RETURNS TRIGGER AS $$
+BEGIN
+    RAISE EXCEPTION 
+    'Wallet transactions are immutable and cannot be modified or deleted.';
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER prevent_wallet_tx_modification
+BEFORE UPDATE OR DELETE
+ON wallet_transaction
+FOR EACH ROW
+EXECUTE FUNCTION trg_prevent_wallet_tx_modification();
+
