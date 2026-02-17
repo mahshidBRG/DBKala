@@ -792,7 +792,7 @@ FOR EACH ROW
 EXECUTE FUNCTION fn_set_bnpl_settled_when_paid();
 
 -- 5-- Compute final_price_at_order_time on INSERT if not provided
--- final_price_at_order_time = quantity * unit_price_after_discounts
+-- final_price_at_order_time = unit_price_after_discounts
 -- unit_price_after_discounts = sale_price * (1 - branch_product.discount)
 -- Note: This computes per-unit final price OR total? (Your column name suggests per-item total.)
 -- Here we store the TOTAL line amount: quantity * unit_price_after_discounts.
@@ -816,7 +816,7 @@ BEGIN
   -- If not provided by application, compute it
   IF NEW.final_price_at_order_time IS NULL THEN
     NEW.final_price_at_order_time :=
-      (NEW.quantity * (v_sale_price * (1 - v_discount)))::numeric(12,2);
+      (v_sale_price * (1 - v_discount))::numeric(12,2);
   END IF;
 
   RETURN NEW;
