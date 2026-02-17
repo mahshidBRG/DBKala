@@ -1,0 +1,58 @@
+-- Query: Common customers between two branches
+-- Inputs:
+--   :branch1_id (INT)  -- first branch id
+--   :branch2_id (INT)  -- second branch id
+-- Output:
+--   customer_name,
+--   orders_in_branch1,
+--   orders_in_branch2,
+--   branch_with_more_orders (branch name; 'Equal' if tie)
+--
+-- Notes:
+-- - Counts DISTINCT orders per branch (not order items).
+-- - Uses your post-migration schema: order_item -> branch_product_id -> branch_product.branch_id
+
+WITH orders_per_branch AS (
+  SELECT
+    o.customer_id,
+    bp.branch_id,
+    COUNT(DISTINCT o.order_id) AS num_orders
+  FROM ordere o
+  JOIN order_item oi
+    ON oi.order_id = o.order_id
+  JOIN branch_product bp
+    ON bp.branch_product_id = oi.branch_product_id
+  WHERE bp.branch_id IN (:branch1_id, :branch2_id)
+  GROUP BY o.customer_id, bp.branch_id
+),
+common_customers AS (
+  SELECT
+    customer_id
+  FROM orders_per_branch
+  GROUP BY customer_id
+  HAVING COUNT(DISTINCT branch_id) = 2
+),
+pivoted AS (
+  SELECT
+    cc.customer_id,
+    COALESCE(MAX(CASE WHEN opb.branch_id = :branch1_id THEN opb.num_orders END), 0) AS orders_in_branch1,
+    COALESCE(MAX(CASE WHEN opb.branch_id = :branch2_id THEN opb.num_orders END), 0) AS orders_in_branch2
+  FROM common_customers cc
+  JOIN orders_per_branch opb
+    ON opb.customer_id = cc.customer_id
+  GROUP BY cc.customer_id
+)
+SELECT
+  c.name AS customer_name,
+  p.orders_in_branch1,
+  p.orders_in_branch2,
+  CASE
+    WHEN p.orders_in_branch1 > p.orders_in_branch2 THEN b1.name
+    WHEN p.orders_in_branch2 > p.orders_in_branch1 THEN b2.name
+    ELSE 'Equal'
+  END AS branch_with_more_orders
+FROM pivoted p
+JOIN customer c ON c.customer_id = p.customer_id
+JOIN branch b1 ON b1.branch_id = :branch1_id
+JOIN branch b2 ON b2.branch_id = :branch2_id
+ORDER BY customer_name;
