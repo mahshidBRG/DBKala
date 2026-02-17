@@ -726,6 +726,15 @@ EXECUTE FUNCTION trg_prevent_wallet_tx_modification();
 -- - This runs AFTER changes to repayment, because repayments are what make a BNPL "paid".
 -- - It only flips to Settled (it does not flip back to Active if you later delete repayments).
 
+-- Drop the old CHECK constraint
+ALTER TABLE bnpl_plan
+DROP CONSTRAINT IF EXISTS bnpl_plan_status_check;
+
+-- Add the new allowed-status CHECK
+ALTER TABLE bnpl_plan
+ADD CONSTRAINT bnpl_plan_status_check
+CHECK (status IN ('Active', 'Settled'));
+
 CREATE OR REPLACE FUNCTION fn_set_bnpl_settled_when_paid()
 RETURNS trigger AS $$
 DECLARE
