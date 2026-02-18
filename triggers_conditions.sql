@@ -404,8 +404,6 @@ BEGIN
   END IF;
 END $$;
 
-ALTER TABLE public.order_item
-  ALTER COLUMN branch_product_id SET NOT NULL;
 
 -- New FK to surrogate key
 ALTER TABLE public.order_item
@@ -416,6 +414,8 @@ ALTER TABLE public.order_item
 
 COMMIT;
 
+ALTER TABLE public.order_item
+  DROP CONSTRAINT fk_order_item_branch_product;
 --for references to order_item
 ALTER TABLE public.order_item
   ADD CONSTRAINT order_item_order_id_branch_product_id_uk
@@ -668,10 +668,7 @@ CHECK (comment_text IS NULL OR char_length(comment_text) <= 800);
 -- If the payment method is BNPL:
 -- - No wallet refund is issued, since the customer has not yet paid the full amount. The outstanding balance is handled dynamically.
 
-'Return Pending Review', 'Return Approved', 'Return Rejected'
-'Unknown', 'Shipped', 'Received', 'Stocking', 'Pending Payment'
-
-CCREATE OR REPLACE FUNCTION trg_refund_after_return()
+CREATE OR REPLACE FUNCTION trg_refund_after_return()
 RETURNS TRIGGER AS $$
 DECLARE
     refund_amount NUMERIC;
@@ -913,3 +910,45 @@ CREATE TRIGGER trg_prevent_final_price_update
 BEFORE UPDATE OF final_price_at_order_time ON order_item
 FOR EACH ROW
 EXECUTE FUNCTION fn_prevent_final_price_update();
+
+
+-- 7-  Set cost_price_at_order_time from supplier with minimum supply_time
+CREATE OR REPLACE FUNCTION fn_set_cost_price_at_order_time()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_cost_price NUMERIC(12,2);
+    v_supply_count INTEGER;
+    v_branch_product_info RECORD;
+BEGIN
+    -- validate branch_product has at least one supplier
+    SELECT COUNT(*) INTO v_supply_count
+    FROM supply s
+    WHERE s.branch_product_id = NEW.branch_product_id;
+    
+    IF v_supply_count = 0 THEN
+        RAISE EXCEPTION 'Cannot insert order item : There is not any supplier.';
+    END IF;
+    
+    -- find supplier with minimum supply_time for this branch_product
+    SELECT s.cost_price INTO v_cost_price
+    FROM supply s
+    WHERE s.branch_product_id = NEW.branch_product_id
+    ORDER BY s.supply_time ASC
+    LIMIT 1;
+    
+    -- validate cost price is not NULL
+    IF v_cost_price IS NULL THEN
+        
+        RAISE EXCEPTION 'Cannot insert order item : Cost price not found.';
+    END IF;
+
+    -- set the cost price at order time
+    NEW.cost_price_at_order_time := v_cost_price;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_order_item_set_cost_price
+    BEFORE INSERT ON order_item
+    FOR EACH ROW
+    EXECUTE FUNCTION fn_set_cost_price_at_order_time();
