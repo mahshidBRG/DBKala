@@ -757,7 +757,7 @@ ON Wallet_transaction
 FOR EACH ROW
 EXECUTE FUNCTION trg_wallet_balance_sync();
 
--- Wallet transactions are defined as immutable to preserve financial integrity and auditability.
+-- 3- Wallet transactions are defined as immutable to preserve financial integrity and auditability.
 CREATE OR REPLACE FUNCTION trg_prevent_wallet_tx_modification()
 RETURNS TRIGGER AS $$
 BEGIN
