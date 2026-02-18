@@ -317,160 +317,219 @@ ADD CONSTRAINT uq_branch_manager UNIQUE (manager_id);
 
 
 -- 8
--- Add surrogate key
-ALTER TABLE branch_product
-  ADD COLUMN branch_product_id BIGSERIAL;
+-- 1. Drop foreign keys that depend on the current composite key
+ALTER TABLE public.order_item
+  DROP CONSTRAINT fk_order_item_branch_product;
+ALTER TABLE public.supply
+  DROP CONSTRAINT supply_branch_id_product_id_fkey;
 
--- Drop old composite PK
-ALTER TABLE branch_product
+-- 2. Add the surrogate column as SERIAL (creates sequence, fills existing rows)
+ALTER TABLE public.branch_product
+  ADD COLUMN branch_product_id SERIAL;
+
+-- 3. Drop the old composite primary key
+ALTER TABLE public.branch_product
   DROP CONSTRAINT branch_product_pkey;
 
--- Add new PK
-ALTER TABLE branch_product
-  ADD CONSTRAINT pk_branch_product_id PRIMARY KEY (branch_product_id);
+-- 4. Make the new column the primary key
+ALTER TABLE public.branch_product
+  ADD PRIMARY KEY (branch_product_id);
 
--- Make branch nullable
-ALTER TABLE branch_product
+-- 5. Re‑establish uniqueness on (branch_id, product_id) for data integrity
+ALTER TABLE public.branch_product
+  ADD CONSTRAINT branch_product_unique UNIQUE (branch_id, product_id);
+
+-- 6. Make branch_id nullable (now allowed because it's no longer part of PK)
+ALTER TABLE public.branch_product
   ALTER COLUMN branch_id DROP NOT NULL;
 
--- Enforce uniqueness even when branch_id is NULL (Postgres 15+)
-ALTER TABLE branch_product
-  ADD CONSTRAINT uq_branch_product_pair
-  UNIQUE NULLS NOT DISTINCT (branch_id, product_id);
-
--- Change FK to branch with SET NULL
-ALTER TABLE branch_product
-  DROP CONSTRAINT branch_product_branch_id_fkey;
-
-ALTER TABLE branch_product
-  ADD CONSTRAINT branch_product_branch_id_fkey
-  FOREIGN KEY (branch_id) REFERENCES branch(branch_id)
-  ON DELETE SET NULL;
 -- adjust refrences to Branch_product(branch_id,product_id)
 -----------------
 --supply
 -----------------
 
--- 1) add column
-ALTER TABLE supply
-  ADD COLUMN branch_product_id BIGINT;
+BEGIN;
 
--- 2) backfill
-UPDATE supply s
+ALTER TABLE public.supply
+  ADD COLUMN branch_product_id bigint;
+
+UPDATE public.supply s
 SET branch_product_id = bp.branch_product_id
-FROM branch_product bp
-WHERE bp.branch_id = s.branch_id
-  AND bp.product_id = s.product_id;
+FROM public.branch_product bp
+WHERE s.branch_id = bp.branch_id
+  AND s.product_id = bp.product_id
+  AND s.branch_product_id IS NULL;
 
--- 3) make it NOT NULL if every row matched (recommended)
-ALTER TABLE supply
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.supply WHERE branch_product_id IS NULL) THEN
+    RAISE EXCEPTION 'Backfill failed: some supply rows have NULL branch_product_id';
+  END IF;
+END $$;
+
+ALTER TABLE public.supply
   ALTER COLUMN branch_product_id SET NOT NULL;
 
--- 4) add FK to surrogate PK
-ALTER TABLE supply
-  ADD CONSTRAINT fk_supply_branch_product_id
+ALTER TABLE public.supply
+  ADD CONSTRAINT supply_branch_product_id_fkey
   FOREIGN KEY (branch_product_id)
-  REFERENCES branch_product(branch_product_id)
+  REFERENCES public.branch_product(branch_product_id)
   ON DELETE CASCADE;
 
--- 5) drop old composite FK
-ALTER TABLE supply
-  DROP CONSTRAINT supply_branch_id_product_id_fkey;  -- name may differ in your DB
+COMMIT;
+ALTER TABLE public.supply
+  DROP CONSTRAINT supply_branch_id_product_id_fkey;
 
 -----------------
 --order_item
 -----------------
-ALTER TABLE order_item
-  ADD COLUMN branch_product_id BIGINT;
+BEGIN;
 
-UPDATE order_item oi
+ALTER TABLE public.order_item
+  ADD COLUMN branch_product_id bigint;
+
+UPDATE public.order_item oi
 SET branch_product_id = bp.branch_product_id
-FROM branch_product bp
-WHERE bp.branch_id = oi.branch_id
-  AND bp.product_id = oi.product_id;
+FROM public.branch_product bp
+WHERE oi.branch_id = bp.branch_id
+  AND oi.product_id = bp.product_id
+  AND oi.branch_product_id IS NULL;
 
-ALTER TABLE order_item
+-- Ensure it filled for all rows
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.order_item WHERE branch_product_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'Backfill failed: some order_item rows have NULL branch_product_id';
+  END IF;
+END $$;
+
+ALTER TABLE public.order_item
   ALTER COLUMN branch_product_id SET NOT NULL;
 
-ALTER TABLE order_item
-  ADD CONSTRAINT fk_order_item_branch_product_id
+-- New FK to surrogate key
+ALTER TABLE public.order_item
+  ADD CONSTRAINT order_item_branch_product_id_fkey
   FOREIGN KEY (branch_product_id)
-  REFERENCES branch_product(branch_product_id)
+  REFERENCES public.branch_product(branch_product_id)
   ON DELETE RESTRICT;
 
--- drop old composite FK
-ALTER TABLE order_item
+COMMIT;
+
+ALTER TABLE public.order_item
   DROP CONSTRAINT fk_order_item_branch_product;
-
-ALTER TABLE order_item
-  DROP CONSTRAINT order_item_pkey;
-
-ALTER TABLE order_item
-  ADD CONSTRAINT order_item_pkey PRIMARY KEY (order_id, branch_product_id);
-
+--for references to order_item
+ALTER TABLE public.order_item
+  ADD CONSTRAINT order_item_order_id_branch_product_id_uk
+  UNIQUE (order_id, branch_product_id);
 -----------------
 --feedback
 -----------------
-ALTER TABLE feedback
-  ADD COLUMN branch_product_id BIGINT;
 
-UPDATE feedback f
+BEGIN;
+
+ALTER TABLE public.feedback
+  ADD COLUMN branch_product_id bigint;
+
+UPDATE public.feedback f
 SET branch_product_id = oi.branch_product_id
-FROM order_item oi
-WHERE oi.order_id = f.order_id
-  AND oi.branch_id = f.branch_id
-  AND oi.product_id = f.product_id;
+FROM public.order_item oi
+WHERE f.order_id = oi.order_id
+  AND f.branch_id = oi.branch_id
+  AND f.product_id = oi.product_id
+  AND f.branch_product_id IS NULL;
 
-ALTER TABLE feedback
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.feedback WHERE branch_product_id IS NULL) THEN
+    RAISE EXCEPTION 'Backfill failed: some feedback rows have NULL branch_product_id';
+  END IF;
+END $$;
+
+ALTER TABLE public.feedback
   ALTER COLUMN branch_product_id SET NOT NULL;
 
--- switch PK (optional but consistent)
-ALTER TABLE feedback
-  DROP CONSTRAINT feedback_pkey;
+ALTER TABLE public.feedback
+  ADD CONSTRAINT feedback_order_item_surrogate_fkey
+  FOREIGN KEY (order_id, branch_product_id)
+  REFERENCES public.order_item(order_id, branch_product_id)
+  ON DELETE CASCADE;
 
-ALTER TABLE feedback
-  ADD CONSTRAINT feedback_pkey PRIMARY KEY (order_id, branch_product_id);
+COMMIT;
 
--- replace FK to order_item
-ALTER TABLE feedback
+-- Drop old FK (name from your dump)
+ALTER TABLE public.feedback
   DROP CONSTRAINT fk_feedback_order_item;
 
-ALTER TABLE feedback
-  ADD CONSTRAINT fk_feedback_order_item
-  FOREIGN KEY (order_id, branch_product_id)
-  REFERENCES order_item(order_id, branch_product_id)
-  ON DELETE CASCADE;
 
------------------
 --return_request
 -----------------
-ALTER TABLE return_request
-  ADD COLUMN branch_product_id BIGINT;
+BEGIN;
 
-UPDATE return_request rr
+ALTER TABLE public.return_request
+  ADD COLUMN branch_product_id bigint;
+
+UPDATE public.return_request rr
 SET branch_product_id = oi.branch_product_id
-FROM order_item oi
-WHERE oi.order_id = rr.order_id
-  AND oi.branch_id = rr.branch_id
-  AND oi.product_id = rr.product_id;
+FROM public.order_item oi
+WHERE rr.order_id = oi.order_id
+  AND rr.branch_id = oi.branch_id
+  AND rr.product_id = oi.product_id
+  AND rr.branch_product_id IS NULL;
 
-ALTER TABLE return_request
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM public.return_request WHERE branch_product_id IS NULL) THEN
+    RAISE EXCEPTION 'Backfill failed: some return_request rows have NULL branch_product_id';
+  END IF;
+END $$;
+
+ALTER TABLE public.return_request
   ALTER COLUMN branch_product_id SET NOT NULL;
 
-ALTER TABLE return_request
+ALTER TABLE public.return_request
+  ADD CONSTRAINT return_request_order_item_surrogate_fkey
+  FOREIGN KEY (order_id, branch_product_id)
+  REFERENCES public.order_item(order_id, branch_product_id)
+  ON DELETE CASCADE;
+
+COMMIT;
+
+-- Drop old FK (name from your dump)
+ALTER TABLE public.return_request
+  DROP CONSTRAINT fk_return_request_order_item;
+----update pks for feedback and return_request
+ALTER TABLE public.feedback
+  DROP CONSTRAINT feedback_pkey;
+
+ALTER TABLE public.feedback
+  ADD CONSTRAINT feedback_pkey PRIMARY KEY (order_id, branch_product_id);
+
+ALTER TABLE public.return_request
   DROP CONSTRAINT return_request_pkey;
 
-ALTER TABLE return_request
+ALTER TABLE public.return_request
+  ADD CONSTRAINT return_request_pkey PRIMARY KEY (order_id, branch_product_id);
+-----clean up
+BEGIN;
+
+-- FEEDBACK: change PK from (order_id, branch_id, product_id) to (order_id, branch_product_id)
+ALTER TABLE public.feedback
+  DROP CONSTRAINT IF EXISTS feedback_pkey;
+
+ALTER TABLE public.feedback
+  ADD CONSTRAINT feedback_pkey PRIMARY KEY (order_id, branch_product_id);
+
+-- RETURN_REQUEST: change PK similarly
+ALTER TABLE public.return_request
+  DROP CONSTRAINT IF EXISTS return_request_pkey;
+
+ALTER TABLE public.return_request
   ADD CONSTRAINT return_request_pkey PRIMARY KEY (order_id, branch_product_id);
 
-ALTER TABLE return_request
-  DROP CONSTRAINT fk_return_request_order_item;
+COMMIT;
 
-ALTER TABLE return_request
-  ADD CONSTRAINT fk_return_request_order_item
-  FOREIGN KEY (order_id, branch_product_id)
-  REFERENCES order_item(order_id, branch_product_id)
-  ON DELETE CASCADE;
 ------------------------------------------------------------------------
 ALTER TABLE order_item DROP COLUMN branch_id, DROP COLUMN product_id;
 ALTER TABLE supply DROP COLUMN branch_id, DROP COLUMN product_id;
