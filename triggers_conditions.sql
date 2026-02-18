@@ -680,26 +680,33 @@ DECLARE
     w_id INT;
 BEGIN
 
+    -- Only when return becomes approved
     IF NEW.review_results = 'Return Approved'
-       AND (OLD.review_results IS DISTINCT FROM 'Return Approved') THEN 
+       AND OLD.review_results IS DISTINCT FROM 'Return Approved' THEN 
 
-        SELECT quantity * final_price_at_order_time
+        -- Calculate refund from order_item (NEW structure)
+        SELECT oi.quantity * oi.final_price_at_order_time
         INTO refund_amount
-        FROM order_item
-        WHERE order_id = NEW.order_id
-          AND branch_id = NEW.branch_id
-          AND product_id = NEW.product_id;
+        FROM order_item oi
+        WHERE oi.order_id = NEW.order_id
+          AND oi.branch_product_id = NEW.branch_product_id;
 
+        -- Get customer & payment method
         SELECT o.customer_id, o.payment_method
         INTO cust_id, pay_method
         FROM Ordere o
         WHERE o.order_id = NEW.order_id;
 
+        -- If NOT BNPL → refund to wallet
         IF pay_method <> 'BNPL' THEN
 
             SELECT wallet_id INTO w_id
             FROM Wallet
             WHERE customer_id = cust_id;
+
+            IF w_id IS NULL THEN
+                RAISE EXCEPTION 'Wallet not found for customer %', cust_id;
+            END IF;
 
             INSERT INTO Wallet_transaction(
                 wallet_id,
