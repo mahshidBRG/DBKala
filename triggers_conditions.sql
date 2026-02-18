@@ -377,8 +377,7 @@ ALTER TABLE public.supply
   ON DELETE CASCADE;
 
 COMMIT;
-ALTER TABLE public.supply
-  DROP CONSTRAINT supply_branch_id_product_id_fkey;
+
 
 -----------------
 --order_item
@@ -417,8 +416,6 @@ ALTER TABLE public.order_item
 
 COMMIT;
 
-ALTER TABLE public.order_item
-  DROP CONSTRAINT fk_order_item_branch_product;
 --for references to order_item
 ALTER TABLE public.order_item
   ADD CONSTRAINT order_item_order_id_branch_product_id_uk
