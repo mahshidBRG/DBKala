@@ -606,48 +606,102 @@ FOR EACH ROW
 EXECUTE FUNCTION fn_branch_delete_anonymize_customers();
 
 -- 9
-ALTER TABLE order_item
-ALTER COLUMN return_status SET DEFAULT 'Return Pending Review';
+ALTER TABLE return_request
+ALTER COLUMN review_results SET DEFAULT 'Return Pending Review';
 
-UPDATE order_item
-SET return_status = 'Return Pending Review'
-WHERE return_status IS NULL;
+UPDATE return_request
+SET review_results = 'Return Pending Review'
+WHERE return_request IS NULL;
 
 ALTER TABLE return_request
 ALTER COLUMN review_results SET NOT NULL;
-CREATE OR REPLACE FUNCTION fn_enforce_return_status_flow()
-RETURNS trigger AS $$
+-- 1) Ensure review_results has a default and is NOT NULL
+ALTER TABLE public.return_request
+  ALTER COLUMN review_results SET DEFAULT 'Return Pending Review';
+
+UPDATE public.return_request
+SET review_results = 'Return Pending Review'
+WHERE review_results IS NULL;
+
+ALTER TABLE public.return_request
+  ALTER COLUMN review_results SET NOT NULL;
+
+
+-- 2) Enforce return_status flow (ONLY if return_status is in order_item)
+CREATE OR REPLACE FUNCTION public.fn_enforce_return_status_flow()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
 BEGIN
-  
+  -- No change
   IF NEW.return_status IS NOT DISTINCT FROM OLD.return_status THEN
     RETURN NEW;
   END IF;
 
-  IF NEW.return_status NOT IN ('Return Pending Review', 'Return Approved', 'Return Rejected') THEN
+  -- Validate allowed values (allow NULL if you want; remove "IS NOT NULL" check if you want to forbid NULL)
+  IF NEW.return_status IS NOT NULL
+     AND NEW.return_status NOT IN ('Return Pending Review', 'Return Approved', 'Return Rejected') THEN
     RAISE EXCEPTION 'Invalid return_status: %', NEW.return_status;
   END IF;
 
-
-  IF OLD.return_status = 'Return Pending Review' THEN
-    IF NEW.return_status IN ('Return Approved', 'Return Rejected', 'Return Pending Review') THEN
+  -- Transition rules
+  IF OLD.return_status = 'Return Pending Review' OR OLD.return_status IS NULL THEN
+    IF NEW.return_status IN ('Return Pending Review', 'Return Approved', 'Return Rejected') THEN
       RETURN NEW;
     ELSE
       RAISE EXCEPTION 'Invalid transition from % to %', OLD.return_status, NEW.return_status;
     END IF;
   ELSE
-   
+    -- Approved/Rejected are final
     RAISE EXCEPTION 'Return status is final; cannot transition from % to %', OLD.return_status, NEW.return_status;
   END IF;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
-DROP TRIGGER IF EXISTS trg_return_status_flow ON order_item;
+DROP TRIGGER IF EXISTS trg_return_status_flow ON public.order_item;
 
 CREATE TRIGGER trg_return_status_flow
-BEFORE UPDATE OF return_status ON order_item
+BEFORE UPDATE OF return_status ON public.order_item
 FOR EACH ROW
-EXECUTE FUNCTION fn_enforce_return_status_flow();
+EXECUTE FUNCTION public.fn_enforce_return_status_flow();
 
+
+-- 3) Enforce review_results flow on return_request
+CREATE OR REPLACE FUNCTION public.fn_enforce_review_results_flow()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- No change
+  IF NEW.review_results IS NOT DISTINCT FROM OLD.review_results THEN
+    RETURN NEW;
+  END IF;
+
+  -- Validate allowed values (review_results is NOT NULL now, so we don't allow NULL)
+  IF NEW.review_results NOT IN ('Return Pending Review', 'Return Approved', 'Return Rejected') THEN
+    RAISE EXCEPTION 'Invalid review_results: %', NEW.review_results;
+  END IF;
+
+  -- Transition rules
+  IF OLD.review_results = 'Return Pending Review' THEN
+    IF NEW.review_results IN ('Return Pending Review', 'Return Approved', 'Return Rejected') THEN
+      RETURN NEW;
+    ELSE
+      RAISE EXCEPTION 'Invalid transition from % to %', OLD.review_results, NEW.review_results;
+    END IF;
+  ELSE
+    -- Approved/Rejected are final
+    RAISE EXCEPTION 'Review result is final; cannot transition from % to %', OLD.review_results, NEW.review_results;
+  END IF;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_review_results_flow ON public.return_request;
+
+CREATE TRIGGER trg_review_results_flow
+BEFORE UPDATE OF review_results ON public.return_request
+FOR EACH ROW
+EXECUTE FUNCTION public.fn_enforce_review_results_flow();
 -- 10 - The feedback's length should be less than 800 chars the other constraint has been implemented in phase 1
 ALTER TABLE feedback
 ADD CONSTRAINT chk_feedback_comment_len
