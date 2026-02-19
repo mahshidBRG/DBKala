@@ -58,7 +58,7 @@ SELECT
     'BNPL'
 FROM eligible_customers ec
 ORDER BY random()
-LIMIT 50;
+LIMIT 100;
 
 -- Insert multiple unique order items per order :
 INSERT INTO order_item (order_id, branch_product_id, quantity, price)
@@ -84,6 +84,12 @@ JOIN LATERAL (
     LIMIT (floor(random() * 5) + 1)::int  -- number of items
 ) bp ON true
 WHERE o.payment_method = 'BNPL';
+
+-- create bnpl_plan for orders that paied by BNPL:
+INSERT INTO bnpl_plan (order_id, status)
+SELECT order_id, 'Active'
+FROM ordere
+WHERE payment_method = 'BNPL';
 
 
 -- Create Payment transactions for normal Wallet orders (exclude BNPL)
@@ -114,7 +120,7 @@ WITH target_bnpl AS (
     JOIN ordere o ON o.order_id = b.order_id
     WHERE b.status = 'Active'
     ORDER BY random()
-    LIMIT 20
+    LIMIT 60
 ),
 installments AS (
     SELECT
@@ -137,7 +143,7 @@ created_transactions AS (
     RETURNING wallet_id, transaction_sequence_number, amount, transaction_time
 )
 
--- Register BNPL repayments in repayment table
+-- Register BNPL repayments in repayment table for repayments that have In-App Wallet methods
 INSERT INTO repayment (
     bnpl_id,
     wallet_id,
@@ -158,6 +164,25 @@ JOIN installments i
   ON i.wallet_id = ct.wallet_id
  AND i.pay_time = ct.transaction_time
  AND i.amount = ct.amount;
+
+-- Register BNPL repayments in repayment table for repayments that have a method other than In-App Wallet
+ WITH bnpl_without_repayment AS (
+    SELECT b.bnpl_id, o.customer_id, o.total_amount, o.order_date
+    FROM bnpl_plan b
+    JOIN ordere o ON o.order_id = b.order_id
+    LEFT JOIN repayment r ON r.bnpl_id = b.bnpl_id
+    WHERE r.bnpl_id IS NULL
+      AND b.status = 'Active'
+)
+INSERT INTO repayment (bnpl_id, wallet_id, amount, date, method)
+SELECT
+    b.bnpl_id,
+    NULL,
+    ROUND(b.total_amount / 3.0, 2) AS amount,
+    (b.order_date + (n || ' month')::interval)::date AS date,
+    (ARRAY['Cash','Credit Card','Debit Card'])[floor(random() * 3 + 1)] AS method
+FROM bnpl_without_repayment b,
+     generate_series(1, (floor(random() * 4))::int) n;  
 
 -- Add Deposit transactions to match final wallet balances
 WITH wallet_totals AS (
