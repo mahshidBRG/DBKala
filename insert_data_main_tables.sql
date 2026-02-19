@@ -314,7 +314,6 @@ BEGIN
 
 END;
 $$;
-CALL public.run_staging_load();
 
 
 -----------------------------------------------------
@@ -486,3 +485,65 @@ WHERE NOT EXISTS (
     WHERE bp.branch_id = b.branch_id
       AND bp.product_id = p.product_id
 );
+  -------------------------------------------------------------------
+  -- Supply
+  -------------------------------------------------------------------
+  FOR r IN
+    SELECT DISTINCT
+      s.supplier_id        AS supplier_id,
+      bp.branch_product_id AS branch_product_id,
+      bps.lead_time_days   AS supply_time,
+      bps.supply_price     AS cost_price
+    FROM branch_product_suppliers bps
+    JOIN public.supplier s
+      ON s.name = NULLIF(trim(bps.supplier_name), '')
+    JOIN public.branch b
+      ON b.name = NULLIF(trim(bps.branch_name), '')
+    JOIN public.product p
+      ON p.name = NULLIF(trim(bps.product_name), '')
+    JOIN public.branch_product bp
+      ON bp.branch_id = b.branch_id
+     AND bp.product_id = p.product_id
+    WHERE bps.supply_price IS NOT NULL
+      AND bps.lead_time_days IS NOT NULL
+  LOOP
+    BEGIN
+      INSERT INTO public.supply (supplier_id, supply_time, cost_price, branch_product_id)
+      VALUES (r.supplier_id, r.supply_time, r.cost_price, r.branch_product_id);
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
+
+      PERFORM public.log_etl_error(
+        'supply', 'INSERT supply',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
+
+END;
+$$;
+-------------------------------------------------------------------
+  -- wallet
+--------------------------------------------------------------------
+WITH wb_dedup AS (
+  SELECT
+    lower(trim(customer_email)) AS email,
+    max(wallet_balance::numeric(15,2)) AS balance
+  FROM wallet_balances
+  WHERE customer_email IS NOT NULL
+  GROUP BY lower(trim(customer_email))
+)
+INSERT INTO public.wallet (customer_id, balance)
+SELECT c.customer_id, d.balance
+FROM wb_dedup d
+JOIN public.customer c
+  ON lower(trim(c.email)) = d.email
+ON CONFLICT (customer_id) DO UPDATE
+SET balance = EXCLUDED.balance;
+
+
+CALL public.run_staging_load();
