@@ -416,6 +416,11 @@ ALTER TABLE public.order_item
 ALTER TABLE public.order_item
   ADD CONSTRAINT order_item_order_id_branch_product_id_uk
   UNIQUE (order_id, branch_product_id);
+-----update pks for order_item and supply
+ALTER TABLE public.order_item
+  ADD CONSTRAINT order_item_pkey PRIMARY KEY (order_id, branch_product_id);
+ALTER TABLE public.supply
+  ADD CONSTRAINT supply_pkey PRIMARY KEY (supplier_id, branch_product_id);
 -----------------
 --feedback
 -----------------
@@ -504,6 +509,7 @@ ALTER TABLE public.return_request
 
 ALTER TABLE public.return_request
   ADD CONSTRAINT return_request_pkey PRIMARY KEY (order_id, branch_product_id);
+
 -----clean up
 BEGIN;
 
