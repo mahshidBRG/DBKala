@@ -613,8 +613,8 @@ UPDATE order_item
 SET return_status = 'Return Pending Review'
 WHERE return_status IS NULL;
 
-ALTER TABLE order_item
-ALTER COLUMN return_status SET NOT NULL;
+ALTER TABLE return_request
+ALTER COLUMN review_results SET NOT NULL;
 CREATE OR REPLACE FUNCTION fn_enforce_return_status_flow()
 RETURNS trigger AS $$
 BEGIN
