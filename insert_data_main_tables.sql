@@ -1,128 +1,320 @@
-INSERT INTO Category (name)
-SELECT DISTINCT
-    category
-FROM products_properties
-WHERE category IS NOT NULL
-  AND NOT EXISTS (
-      SELECT 1
-      FROM Category c
-      WHERE c.name = products_properties.category
-        AND c.parent_category_id IS NULL   -- only root categories
+CREATE TABLE IF NOT EXISTS public.etl_error_log (
+  error_id        bigserial PRIMARY KEY,
+  occurred_at     timestamptz NOT NULL DEFAULT now(),
+  target_table    text        NOT NULL,
+  operation       text        NOT NULL,
+  constraint_name text,
+  sqlstate        text,
+  error_message   text        NOT NULL,
+  row_data        jsonb
+);
+
+CREATE OR REPLACE FUNCTION public.log_etl_error(
+  p_target_table    text,
+  p_operation       text,
+  p_constraint_name text,
+  p_sqlstate        text,
+  p_error_message   text,
+  p_row_data        jsonb
+) RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO public.etl_error_log(
+    target_table, operation, constraint_name, sqlstate, error_message, row_data
+  )
+  VALUES (
+    p_target_table, p_operation, p_constraint_name, p_sqlstate, p_error_message, p_row_data
   );
+END;
+$$;
+CREATE OR REPLACE PROCEDURE public.run_staging_load()
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  r record;
+  v_constraint text;
+  v_sqlstate   text;
+  v_msg        text;
+BEGIN
+  -------------------------------------------------------------------
+  -- 1) Category (root)
+  -------------------------------------------------------------------
+  FOR r IN
+    SELECT DISTINCT pp.category AS name
+    FROM products_properties pp
+    WHERE pp.category IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.category c
+        WHERE c.name = pp.category
+          AND c.parent_category_id IS NULL
+      )
+  LOOP
+    BEGIN
+      INSERT INTO public.category(name) VALUES (r.name);
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
 
-INSERT INTO Category (name, parent_category_id)
-SELECT DISTINCT
-    pp.sub_category,
-    c.category_id
-FROM products_properties pp
-JOIN Category c
-    ON c.name = pp.category
-    AND c.parent_category_id IS NULL   -- only root categories
-WHERE pp.sub_category IS NOT NULL
-  AND NOT EXISTS (
-      SELECT 1
-      FROM Category sub
-      WHERE sub.name = pp.sub_category
-        AND sub.parent_category_id = c.category_id
-  );
+      PERFORM public.log_etl_error(
+        'category', 'INSERT root category',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
 
-INSERT INTO Branch_manager(name)
-SELECT DISTINCT trim(r.manager_name)
-FROM branch_product_suppliers r
-WHERE r.manager_name IS NOT NULL
-  AND trim(r.manager_name) <> ''
-  AND NOT EXISTS (
-    SELECT 1
-    FROM branch_manager bm
-    WHERE bm.name = trim(r.manager_name)
-  );
+  -------------------------------------------------------------------
+  -- 2) Category (sub-category child)
+  -------------------------------------------------------------------
+  FOR r IN
+    SELECT DISTINCT
+      pp.sub_category AS child_name,
+      c.category_id   AS parent_id,
+      pp.category     AS parent_name
+    FROM products_properties pp
+    JOIN public.category c
+      ON c.name = pp.category
+     AND c.parent_category_id IS NULL
+    WHERE pp.sub_category IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.category sub
+        WHERE sub.name = pp.sub_category
+          AND sub.parent_category_id = c.category_id
+      )
+  LOOP
+    BEGIN
+      INSERT INTO public.category(name, parent_category_id)
+      VALUES (r.child_name, r.parent_id);
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
 
--- Insert unique shipping addresses from the main BDBkala_full staging table (city/region/zip taken from dataset; invalid region -> NULL)
-INSERT INTO Address(recipient_address, city, region, zip_code)
-SELECT DISTINCT
-  NULLIF(trim(s.shipping_address),'') AS recipient_address,
-  NULLIF(trim(s.city),'') AS city,
-  CASE
-    WHEN NULLIF(trim(s.region),'') IN ('East','West','Central','South','North')
-      THEN NULLIF(trim(s.region),'')
-    ELSE NULL
-  END AS region,
-  NULLIF(trim(s.zip_code),'') AS zip_code
-FROM bdbkala_full s
-WHERE NULLIF(trim(s.shipping_address),'') IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1
-    FROM Address a
-    WHERE a.recipient_address = NULLIF(trim(s.shipping_address),'')
-      AND COALESCE(a.city,'') = COALESCE(NULLIF(trim(s.city),''),'')
-      AND COALESCE(a.region,'') = COALESCE(
-            CASE
-              WHEN NULLIF(trim(s.region),'') IN ('East','West','Central','South','North')
-                THEN NULLIF(trim(s.region),'')
-              ELSE NULL
-            END,'')
-      AND COALESCE(a.zip_code,'') = COALESCE(NULLIF(trim(s.zip_code),''),'')
-  );
+      PERFORM public.log_etl_error(
+        'category', 'INSERT sub-category',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
 
--- Insert unique branch addresses from branch_product_suppliers staging table (only address string exists -> city/region/zip stored as NULL)
-INSERT INTO Address(recipient_address, city, region, zip_code)
-SELECT DISTINCT
-  NULLIF(trim(r.address),'') AS recipient_address,
-  NULL, NULL, NULL
-FROM branch_product_suppliers r
-WHERE NULLIF(trim(r.address),'') IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1
-    FROM Address a
-    WHERE a.recipient_address = NULLIF(trim(r.address),'')
-      AND a.city IS NULL
-      AND a.region IS NULL
-      AND a.zip_code IS NULL
-  );
+  -------------------------------------------------------------------
+  -- 3) Branch_manager
+  -------------------------------------------------------------------
+  FOR r IN
+    SELECT DISTINCT trim(bps.manager_name) AS name
+    FROM branch_product_suppliers bps
+    WHERE bps.manager_name IS NOT NULL
+      AND trim(bps.manager_name) <> ''
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.branch_manager bm
+        WHERE bm.name = trim(bps.manager_name)
+      )
+  LOOP
+    BEGIN
+      INSERT INTO public.branch_manager(name) VALUES (r.name);
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
 
--- Insert unique supplier addresses from branch_product_suppliers staging table (only supplier_address string exists -> city/region/zip stored as NULL)
-INSERT INTO Address(recipient_address, city, region, zip_code)
-SELECT DISTINCT
-  NULLIF(trim(r.supplier_address),'') AS recipient_address,
-  NULL, NULL, NULL
-FROM branch_product_suppliers r
-WHERE NULLIF(trim(r.supplier_address),'') IS NOT NULL
-  AND NOT EXISTS (
-    SELECT 1
-    FROM Address a
-    WHERE a.recipient_address = NULLIF(trim(r.supplier_address),'')
-      AND a.city IS NULL
-      AND a.region IS NULL
-      AND a.zip_code IS NULL
-  );
+      PERFORM public.log_etl_error(
+        'branch_manager', 'INSERT manager',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
 
--- Insert data into Branch table --
-INSERT INTO Branch(name, phone, address_id, manager_id)
-SELECT DISTINCT
-  NULLIF(trim(r.branch_name), '') AS name,
-  NULLIF(trim(r.phone), '') AS phone,
-  a.address_id,
-  m.manager_id
-FROM branch_product_suppliers r
-JOIN Address a
-  ON a.recipient_address = NULLIF(trim(r.address), '')
- AND a.city IS NULL AND a.region IS NULL AND a.zip_code IS NULL
-JOIN Branch_manager m
-  ON m.name = NULLIF(trim(r.manager_name), '')
-WHERE NULLIF(trim(r.branch_name), '') IS NOT NULL;
+  -------------------------------------------------------------------
+  -- 4) Address (shipping addresses from bdbkala_full)
+  -------------------------------------------------------------------
+  FOR r IN
+    SELECT DISTINCT
+      NULLIF(trim(s.shipping_address),'') AS recipient_address,
+      NULLIF(trim(s.city),'') AS city,
+      CASE
+        WHEN NULLIF(trim(s.region),'') IN ('East','West','Central','South','North')
+          THEN NULLIF(trim(s.region),'')
+        ELSE NULL
+      END AS region,
+      NULLIF(trim(s.zip_code),'') AS zip_code
+    FROM bdbkala_full s
+    WHERE NULLIF(trim(s.shipping_address),'') IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.address a
+        WHERE a.recipient_address = NULLIF(trim(s.shipping_address),'')
+          AND COALESCE(a.city,'') = COALESCE(NULLIF(trim(s.city),''),'')
+          AND COALESCE(a.region,'') = COALESCE(
+                CASE
+                  WHEN NULLIF(trim(s.region),'') IN ('East','West','Central','South','North')
+                    THEN NULLIF(trim(s.region),'')
+                  ELSE NULL
+                END,'')
+          AND COALESCE(a.zip_code,'') = COALESCE(NULLIF(trim(s.zip_code),''),'')
+      )
+  LOOP
+    BEGIN
+      INSERT INTO public.address(recipient_address, city, region, zip_code)
+      VALUES (r.recipient_address, r.city, r.region, r.zip_code);
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
 
+      PERFORM public.log_etl_error(
+        'address', 'INSERT shipping address',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
 
--- Insert into Supplier table --
-INSERT INTO Supplier(name, phone, address_id)
-SELECT DISTINCT
-  NULLIF(trim(r.supplier_name), '') AS name,
-  NULLIF(trim(r.supplier_phone), '') AS phone,
-  a.address_id
-FROM branch_product_suppliers r
-LEFT JOIN Address a
-  ON a.recipient_address = NULLIF(trim(r.supplier_address), '')
- AND a.city IS NULL AND a.region IS NULL AND a.zip_code IS NULL
-WHERE NULLIF(trim(r.supplier_name), '') IS NOT NULL;
+  -------------------------------------------------------------------
+  -- 5) Address (branch addresses from branch_product_suppliers)
+  -------------------------------------------------------------------
+  FOR r IN
+    SELECT DISTINCT
+      NULLIF(trim(bps.address),'') AS recipient_address
+    FROM branch_product_suppliers bps
+    WHERE NULLIF(trim(bps.address),'') IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.address a
+        WHERE a.recipient_address = NULLIF(trim(bps.address),'')
+          AND a.city IS NULL AND a.region IS NULL AND a.zip_code IS NULL
+      )
+  LOOP
+    BEGIN
+      INSERT INTO public.address(recipient_address, city, region, zip_code)
+      VALUES (r.recipient_address, NULL, NULL, NULL);
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
+
+      PERFORM public.log_etl_error(
+        'address', 'INSERT branch address',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
+
+  -------------------------------------------------------------------
+  -- 6) Address (supplier addresses from branch_product_suppliers)
+  -------------------------------------------------------------------
+  FOR r IN
+    SELECT DISTINCT
+      NULLIF(trim(bps.supplier_address),'') AS recipient_address
+    FROM branch_product_suppliers bps
+    WHERE NULLIF(trim(bps.supplier_address),'') IS NOT NULL
+      AND NOT EXISTS (
+        SELECT 1
+        FROM public.address a
+        WHERE a.recipient_address = NULLIF(trim(bps.supplier_address),'')
+          AND a.city IS NULL AND a.region IS NULL AND a.zip_code IS NULL
+      )
+  LOOP
+    BEGIN
+      INSERT INTO public.address(recipient_address, city, region, zip_code)
+      VALUES (r.recipient_address, NULL, NULL, NULL);
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
+
+      PERFORM public.log_etl_error(
+        'address', 'INSERT supplier address',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
+
+  -------------------------------------------------------------------
+  -- 7) Branch
+  -------------------------------------------------------------------
+  FOR r IN
+    SELECT DISTINCT
+      NULLIF(trim(bps.branch_name), '') AS name,
+      NULLIF(trim(bps.phone), '')       AS phone,
+      a.address_id                      AS address_id,
+      m.manager_id                      AS manager_id,
+      NULLIF(trim(bps.address), '')     AS address_text,
+      NULLIF(trim(bps.manager_name),'') AS manager_name
+    FROM branch_product_suppliers bps
+    JOIN public.address a
+      ON a.recipient_address = NULLIF(trim(bps.address), '')
+     AND a.city IS NULL AND a.region IS NULL AND a.zip_code IS NULL
+    JOIN public.branch_manager m
+      ON m.name = NULLIF(trim(bps.manager_name), '')
+    WHERE NULLIF(trim(bps.branch_name), '') IS NOT NULL
+  LOOP
+    BEGIN
+      INSERT INTO public.branch(name, phone, address_id, manager_id)
+      VALUES (r.name, r.phone, r.address_id, r.manager_id);
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
+
+      PERFORM public.log_etl_error(
+        'branch', 'INSERT branch',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
+
+  -------------------------------------------------------------------
+  -- 8) Supplier
+  -------------------------------------------------------------------
+  FOR r IN
+    SELECT DISTINCT
+      NULLIF(trim(bps.supplier_name), '')    AS name,
+      NULLIF(trim(bps.supplier_phone), '')   AS phone,
+      a.address_id                           AS address_id,
+      NULLIF(trim(bps.supplier_address), '') AS supplier_address
+    FROM branch_product_suppliers bps
+    LEFT JOIN public.address a
+      ON a.recipient_address = NULLIF(trim(bps.supplier_address), '')
+     AND a.city IS NULL AND a.region IS NULL AND a.zip_code IS NULL
+    WHERE NULLIF(trim(bps.supplier_name), '') IS NOT NULL
+  LOOP
+    BEGIN
+      INSERT INTO public.supplier(name, phone, address_id)
+      VALUES (r.name, r.phone, r.address_id);
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
+
+      PERFORM public.log_etl_error(
+        'supplier', 'INSERT supplier',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
+
+END;
+$$;
+CALL public.run_staging_load();
 
 
 -----------------------------------------------------
@@ -244,3 +436,24 @@ SELECT
   END
 FROM validated
 WHERE reject_reason IS NULL;
+
+-----------------------------------------------------
+---filing product table
+-----------------------------------------------------
+INSERT INTO public.product (name, specifications, vat_exemption_percent, category_id)
+SELECT
+  pp.product_name AS name,
+  pp.attributes::jsonb AS specifications,
+
+  -- 0.00 to 0.15 (0% to 15%), deterministic per product_name
+  round(((abs(hashtext(pp.product_name)) % 16)::numeric) / 100, 2) AS vat_exemption_percent,
+
+  child.category_id AS category_id
+FROM products_properties pp
+JOIN public.category parent
+  ON parent.name = pp.category
+ AND parent.parent_category_id IS NULL
+JOIN public.category child
+  ON child.name = pp.sub_category
+ AND child.parent_category_id = parent.category_id
+ON CONFLICT (product_id) DO NOTHING;
