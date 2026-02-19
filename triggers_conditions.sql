@@ -98,40 +98,33 @@ CHECK (status IN ('Shipped', 'Received', 'Stocking', 'Pending Payment'));
 -- and never allows 'Unknown'.
 CREATE OR REPLACE FUNCTION trg_validate_order_status()
 RETURNS TRIGGER AS $$
-DECLARE
-    prev_status VARCHAR(30);
 BEGIN
-    
+
     IF NEW.status = 'Unknown' THEN
         RAISE EXCEPTION 'Order status cannot be Unknown!';
     END IF;
 
-    SELECT status INTO prev_status
-    FROM Ordere
-    WHERE order_id = NEW.order_id;
+    IF OLD.status = 'Stocking' AND NEW.status <> 'Pending Payment' THEN
+        RAISE EXCEPTION 'Next status after Stocking must be Pending Payment';
 
-    IF prev_status IS NULL THEN
-        IF NEW.status <> 'Stocking' THEN
-            RAISE EXCEPTION 'New order must start with Stocking';
-        END IF;
-    ELSE
-        IF prev_status = 'Stocking' AND NEW.status <> 'Pending Payment' THEN
-            RAISE EXCEPTION 'Next status after Stocking must be Pending Payment';
-        ELSIF prev_status = 'Pending Payment' AND NEW.status <> 'Shipped' THEN
-            RAISE EXCEPTION 'Next status after Pending Payment must be Shipped';
-        ELSIF prev_status = 'Shipped' AND NEW.status <> 'Received' THEN
-            RAISE EXCEPTION 'Next status after Shipped must be Received';
-        ELSIF prev_status = 'Received' THEN
-            RAISE EXCEPTION 'Order already received; no further updates allowed';
-        END IF;
+    ELSIF OLD.status = 'Pending Payment' AND NEW.status <> 'Shipped' THEN
+        RAISE EXCEPTION 'Next status after Pending Payment must be Shipped';
+
+    ELSIF OLD.status = 'Shipped' AND NEW.status <> 'Received' THEN
+        RAISE EXCEPTION 'Next status after Shipped must be Received';
+
+    ELSIF OLD.status = 'Received' THEN
+        RAISE EXCEPTION 'Order already received; no further updates allowed';
     END IF;
 
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
+DROP TRIGGER IF EXISTS trg_order_status ON Ordere;
+
 CREATE TRIGGER trg_order_status
-BEFORE INSERT OR UPDATE ON Ordere
+BEFORE UPDATE OF status ON Ordere
 FOR EACH ROW
 EXECUTE FUNCTION trg_validate_order_status();
 
@@ -705,7 +698,9 @@ BEGIN
             WHERE customer_id = cust_id;
 
             IF w_id IS NULL THEN
-                RAISE EXCEPTION 'Wallet not found for customer %', cust_id;
+                INSERT INTO Wallet(customer_id, balance)
+                VALUES (cust_id, 0)
+                RETURNING wallet_id INTO w_id;
             END IF;
 
             INSERT INTO Wallet_transaction(
@@ -718,16 +713,14 @@ BEGIN
                 refund_amount,
                 'Deposit'
             );
-
+            
         END IF;
-
     END IF;
-
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER refund_after_return
+CREATE OR REPLACE TRIGGER refund_after_return
 AFTER UPDATE OF review_results
 ON return_request
 FOR EACH ROW
