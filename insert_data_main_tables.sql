@@ -457,3 +457,32 @@ JOIN public.category child
   ON child.name = pp.sub_category
  AND child.parent_category_id = parent.category_id
 ON CONFLICT (product_id) DO NOTHING;
+
+-----------------------------------------------------
+---filing branch_product table
+-----------------------------------------------------
+ALTER TABLE branch_product Drop column stock_quantity;
+INSERT INTO branch_product (branch_id, product_id, sale_price, discount)
+SELECT
+    b.branch_id,
+    p.product_id,
+    COALESCE(pr.avg_unit_price, s.min_supply_price * 1.30) AS sale_price,
+    COALESCE(pr.avg_discount, 0.00) AS discount
+FROM (
+    SELECT branch_name, product_name, MIN(supply_price) AS min_supply_price
+    FROM branch_product_suppliers
+    GROUP BY branch_name, product_name
+) s
+JOIN branch b ON b.name = s.branch_name
+JOIN product p ON p.name = s.product_name
+LEFT JOIN (
+    SELECT product_name, AVG(unit_price) AS avg_unit_price, AVG(discount) AS avg_discount
+    FROM BDBKala_full
+    GROUP BY product_name
+) pr ON pr.product_name = s.product_name
+WHERE NOT EXISTS (
+    SELECT 1
+    FROM branch_product bp
+    WHERE bp.branch_id = b.branch_id
+      AND bp.product_id = p.product_id
+);
