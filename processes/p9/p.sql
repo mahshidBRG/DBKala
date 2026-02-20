@@ -10,58 +10,72 @@
 --   remaining_credit          => debt_limit - current_debt
 --   can_use_bnpl (BOOLEAN)    => TRUE if remaining_credit >= amount_needed
 
+CREATE OR REPLACE FUNCTION public.fn_bnpl_credit_check(
+  p_customer_id   int,
+  p_amount_needed numeric
+)
+RETURNS TABLE (
+  customer_id       int,
+  current_debt      numeric(14,2),
+  debt_limit        numeric(14,2),
+  remaining_credit  numeric(14,2),
+  can_use_bnpl      boolean
+)
+LANGUAGE sql
+STABLE
+AS $$
 WITH loyalty_points AS (
-  -- Fetch the loyalty points for the customer based on last 3 months' orders
   SELECT
     o.customer_id,
-    FLOOR(SUM(oi.quantity * oi.final_price_at_order_time) / 100) AS loyalty_points
-  FROM order_item oi
-  JOIN ordere o ON oi.order_id = o.order_id
-  WHERE o.customer_id = :customer_id
+    COALESCE(FLOOR(SUM(oi.quantity * oi.final_price_at_order_time) / 100), 0)::int AS loyalty_points
+  FROM public.ordere o
+  JOIN public.order_item oi
+    ON oi.order_id = o.order_id
+  WHERE o.customer_id = p_customer_id
     AND o.order_date >= (CURRENT_DATE - INTERVAL '3 months')
   GROUP BY o.customer_id
 ),
 active_bnpl AS (
   SELECT
     bp.bnpl_id,
-    o.customer_id,
-    bp.status
-  FROM bnpl_plan bp
-  JOIN ordere o ON o.order_id = bp.order_id
-  WHERE o.customer_id = :customer_id
+    bp.order_id,
+    o.customer_id
+  FROM public.bnpl_plan bp
+  JOIN public.ordere o
+    ON o.order_id = bp.order_id
+  WHERE o.customer_id = p_customer_id
     AND bp.status = 'Active'
 ),
 bnpl_amounts AS (
-  -- Amount of each BNPL = total order value (sum of items: quantity * final_price_at_order_time)
+  -- Total value per BNPL (tied to that BNPL's order_id)
   SELECT
     ab.customer_id,
     ab.bnpl_id,
     COALESCE(SUM(oi.quantity * oi.final_price_at_order_time), 0)::numeric(14,2) AS bnpl_amount
   FROM active_bnpl ab
-  JOIN ordere o ON o.customer_id = ab.customer_id
-  JOIN order_item oi ON oi.order_id = o.order_id
-  JOIN bnpl_plan bp ON bp.order_id = o.order_id AND bp.bnpl_id = ab.bnpl_id
+  JOIN public.order_item oi
+    ON oi.order_id = ab.order_id
   GROUP BY ab.customer_id, ab.bnpl_id
 ),
 current_debt AS (
-  -- Current debt = sum(active bnpl amounts) - sum(repayments)
   SELECT
-    a.customer_id,
-    COALESCE(SUM(a.bnpl_amount), 0)::numeric(14,2)
-    - COALESCE((
-        SELECT SUM(r.amount)
-        FROM repayment r
-        WHERE r.bnpl_id IN (SELECT bnpl_id FROM active_bnpl)
-      ), 0)::numeric(14,2) AS current_debt
-  FROM bnpl_amounts a
-  GROUP BY a.customer_id
+    p_customer_id AS customer_id,
+    COALESCE(SUM(GREATEST(ba.bnpl_amount - COALESCE(r.paid_amount, 0), 0)), 0)::numeric(14,2) AS current_debt
+  FROM bnpl_amounts ba
+  LEFT JOIN (
+    SELECT bnpl_id, SUM(amount)::numeric(14,2) AS paid_amount
+    FROM public.repayment
+    GROUP BY bnpl_id
+  ) r
+    ON r.bnpl_id = ba.bnpl_id
 )
 SELECT
-  lp.customer_id,
+  p_customer_id AS customer_id,
   COALESCE(cd.current_debt, 0)::numeric(14,2) AS current_debt,
-  (lp.loyalty_points * 20)::numeric(14,2) AS debt_limit,
-  (lp.loyalty_points * 20 - COALESCE(cd.current_debt, 0))::numeric(14,2) AS remaining_credit,
-  ((lp.loyalty_points * 20 - COALESCE(cd.current_debt, 0)) >= :amount_needed) AS can_use_bnpl
-FROM loyalty_points lp
-LEFT JOIN current_debt cd
-  ON cd.customer_id = lp.customer_id;
+  (COALESCE(lp.loyalty_points, 0) * 20)::numeric(14,2) AS debt_limit,
+  ((COALESCE(lp.loyalty_points, 0) * 20) - COALESCE(cd.current_debt, 0))::numeric(14,2) AS remaining_credit,
+  (((COALESCE(lp.loyalty_points, 0) * 20) - COALESCE(cd.current_debt, 0)) >= p_amount_needed) AS can_use_bnpl
+FROM current_debt cd
+LEFT JOIN loyalty_points lp
+  ON lp.customer_id = cd.customer_id;
+$$;
