@@ -314,7 +314,7 @@ BEGIN
 
 END;
 $$;
-
+CALL public.run_staging_load();
 
 -----------------------------------------------------
 ---filing customer table
@@ -488,6 +488,15 @@ WHERE NOT EXISTS (
   -------------------------------------------------------------------
   -- Supply
   -------------------------------------------------------------------
+CREATE OR REPLACE PROCEDURE public.run_staging_load()
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  r record;
+  v_constraint text;
+  v_sqlstate   text;
+  v_msg        text;
+BEGIN
   FOR r IN
     SELECT DISTINCT
       s.supplier_id        AS supplier_id,
@@ -526,6 +535,7 @@ WHERE NOT EXISTS (
 
 END;
 $$;
+CALL public.run_staging_load();
 -------------------------------------------------------------------
   -- wallet
 -------------------------------------------------------------------
@@ -1087,4 +1097,3 @@ END;
 $$;
 
 
-CALL public.run_staging_load();
