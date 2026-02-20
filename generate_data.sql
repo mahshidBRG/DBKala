@@ -184,7 +184,27 @@ SELECT
 FROM bnpl_without_repayment b,
      generate_series(1, (floor(random() * 4))::int) n;  
 
--- Add Deposit transactions to match final wallet balances
+
+-- Add Withdarawal transactions for wallets that have balance more than 50:
+WITH selected_wallets AS (
+    SELECT wallet_id, balance
+    FROM wallet
+    WHERE balance > 50
+    ORDER BY random()
+    LIMIT (
+        SELECT FLOOR(COUNT(*) * 0.3) FROM wallet
+    )
+)
+INSERT INTO Wallet_transaction (wallet_id, amount, transaction_type, transaction_time)
+SELECT
+    w.wallet_id,
+    ROUND(w.balance * (0.1 + random() * 0.3), 2) AS amount, --10 to 40 percent of balance
+    'Withdrawal',
+    CURRENT_DATE - INTERVAL '1 day' * random()
+FROM selected_wallets w;
+     
+
+-- Add Deposit transactions to match final wallet balances:
 WITH wallet_totals AS (
     SELECT
         w.wallet_id,
