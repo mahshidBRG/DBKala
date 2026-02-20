@@ -7,15 +7,27 @@
 -- Output:
 --   distinct_attribute_value
 
+CREATE OR REPLACE FUNCTION public.fn_attribute_values_by_category(
+  p_category_name     text,
+  p_sub_category_name text,
+  p_attribute_key     text
+)
+RETURNS TABLE (
+  distinct_attribute_value text
+)
+LANGUAGE sql
+STABLE
+AS $$
 SELECT DISTINCT
-  p.specifications ->> :attribute_key AS distinct_attribute_value
-FROM product p
-JOIN category subc
+  p.specifications ->> p_attribute_key AS distinct_attribute_value
+FROM public.product p
+JOIN public.category subc
   ON subc.category_id = p.category_id
-JOIN category c
+JOIN public.category c
   ON c.category_id = subc.parent_category_id
-WHERE c.name = :category_name
-  AND subc.name = :sub_category_name
-  AND p.specifications ? :attribute_key               -- key exists
-  AND NULLIF(p.specifications ->> :attribute_key, '') IS NOT NULL
+WHERE c.name = p_category_name
+  AND subc.name = p_sub_category_name
+  AND p.specifications ? p_attribute_key
+  AND NULLIF(p.specifications ->> p_attribute_key, '') IS NOT NULL
 ORDER BY distinct_attribute_value;
+$$;
