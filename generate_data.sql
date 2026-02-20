@@ -49,7 +49,7 @@ eligible_customers AS (
       AND l.credit_limit > COALESCE(d.unpaid_debt, 0)
 )
 
--- Select 50 customers from eligible customers and insert order by BNPL payment for them:
+-- Select 100 customers from eligible customers and insert order by BNPL payment for them:
 INSERT INTO ordere (customer_id, status, priority, payment_method)
 SELECT
     ec.customer_id,
