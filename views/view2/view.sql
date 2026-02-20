@@ -99,3 +99,5 @@ LEFT JOIN loyalty_level ll
     ON ot.customer_id = ll.customer_id
 GROUP BY ot.order_date
 ORDER BY ot.order_date;
+
+SELECT * FROM mv_daily_accounting_report;

@@ -60,3 +60,6 @@ SELECT
     ELSE 'Gold'
   END AS membership_level
 FROM points_calc;
+
+
+SELECT * FROM vw_marketing_customer_loyalty;

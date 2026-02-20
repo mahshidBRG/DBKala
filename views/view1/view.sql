@@ -22,3 +22,5 @@ LEFT JOIN Ordere o ON oi.order_id = o.order_id
     AND o.status NOT IN ('Shipped', 'Received')
 GROUP BY p.product_id, p.name, bp.branch_id, b.name
 HAVING COUNT(DISTINCT o.order_id) > 0;
+
+SELECT * FROM v_pending_orders_by_product;

@@ -6,7 +6,7 @@
 -- Output columns:
 -- - Customer personal details: customer_id, name, age, gender, income, email, phone, customer type/status
 -- - Branch info: branch_id , branch_name (where the customer made purchase)
-CREATE VIEW branch_customers AS
+CREATE VIEW v_branch_customers AS
 SELECT DISTINCT
     c.customer_id,
     c.name AS customer_name,
@@ -24,3 +24,6 @@ JOIN Ordere o ON c.customer_id = o.customer_id
 JOIN order_item oi ON o.order_id = oi.order_id
 JOIN Branch_product bp ON oi.branch_product_id = bp.branch_product_id
 JOIN Branch b ON bp.branch_id = b.branch_id;
+
+
+SELECT * FROM v_branch_customers;
