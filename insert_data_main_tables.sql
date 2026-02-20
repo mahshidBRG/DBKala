@@ -544,7 +544,378 @@ JOIN public.customer c
   ON lower(trim(c.email)) = d.email
 ON CONFLICT (customer_id) DO UPDATE
 SET balance = EXCLUDED.balance;
+-------------------------------------------------------------------
+  -- order
+-------------------------------------------------------------------
+BEGIN;
 
+-- disable triggers that block historical inserts
+ALTER TABLE public.ordere DISABLE TRIGGER trg_enforce_order_date;
+ALTER TABLE public.ordere DISABLE TRIGGER trg_order_status;
+ALTER TABLE public.ordere DISABLE TRIGGER trg_prevent_order_date_update;
+ALTER TABLE public.ordere DISABLE TRIGGER trg_small_business_priority;
+
+DO $$
+DECLARE
+  r record;
+
+  v_customer_id int;
+  v_order_date date;
+
+  v_priority text;
+  v_status text;
+  v_payment text;
+
+  v_constraint text;
+  v_sqlstate text;
+  v_msg text;
+BEGIN
+  FOR r IN
+    WITH base AS (
+      SELECT DISTINCT ON (b.order_id)
+        b.order_id,
+        NULLIF(trim(b.order_date), '')      AS order_date_raw,
+        NULLIF(trim(b.order_priority), '')  AS order_priority_raw,
+        NULLIF(trim(b.order_status), '')    AS order_status_raw,
+        NULLIF(trim(b.payment_method), '')  AS payment_method_raw,
+
+        lower(NULLIF(trim(b.email), ''))    AS email,
+        NULLIF(trim(b.phone), '')           AS phone,
+        NULLIF(trim(b.customer_name), '')   AS customer_name
+      FROM public.bdbkala_full b
+      WHERE b.order_id IS NOT NULL
+      ORDER BY b.order_id
+    )
+    SELECT * FROM base
+  LOOP
+
+    ------------------------------------------------------------
+    -- 1) resolve customer_id (email > phone > name)
+    ------------------------------------------------------------
+    SELECT c.customer_id
+      INTO v_customer_id
+    FROM public.customer c
+    WHERE
+      (r.email IS NOT NULL AND r.email <> '' AND c.email = r.email)
+      OR ( (r.email IS NULL OR r.email = '') AND r.phone IS NOT NULL AND c.phone = r.phone )
+      OR ( (r.email IS NULL OR r.email = '') AND (r.phone IS NULL OR r.phone = '') AND r.customer_name IS NOT NULL AND c.name = r.customer_name )
+    ORDER BY
+      CASE
+        WHEN r.email IS NOT NULL AND r.email <> '' AND c.email = r.email THEN 1
+        WHEN r.phone IS NOT NULL AND c.phone = r.phone THEN 2
+        ELSE 3
+      END
+    LIMIT 1;
+
+    IF v_customer_id IS NULL THEN
+      PERFORM public.log_etl_error(
+        'ordere',
+        'RESOLVE customer_id',
+        'ordere_customer_id_fkey',
+        'ETL_LOOKUP',
+        'Customer not found for this order (by email/phone/name)',
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END IF;
+
+    ------------------------------------------------------------
+    -- 2) parse order_date (safe)
+    ------------------------------------------------------------
+    v_order_date := NULL;
+
+    IF r.order_date_raw IS NULL THEN
+      -- if missing, skip (ordere.order_date is NOT NULL)
+      PERFORM public.log_etl_error(
+        'ordere',
+        'VALIDATION order_date',
+        NULL,
+        'ETL_VALIDATION',
+        'order_date is NULL/empty',
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END IF;
+
+    BEGIN
+      -- supports: MM.DD.YYYY
+      IF r.order_date_raw ~ '^\d{2}\.\d{2}\.\d{4}$' THEN
+        v_order_date := to_date(r.order_date_raw, 'MM.DD.YYYY');
+
+      -- supports: DD-MM-YYYY
+      ELSIF r.order_date_raw ~ '^\d{2}-\d{2}-\d{4}$' THEN
+        v_order_date := to_date(r.order_date_raw, 'DD-MM-YYYY');
+
+      -- supports: YYYY-MM-DD
+      ELSIF r.order_date_raw ~ '^\d{4}-\d{2}-\d{2}$' THEN
+        v_order_date := to_date(r.order_date_raw, 'YYYY-MM-DD');
+
+      ELSE
+        RAISE EXCEPTION 'Unrecognized date format: %', r.order_date_raw;
+      END IF;
+
+    EXCEPTION WHEN OTHERS THEN
+      PERFORM public.log_etl_error(
+        'ordere',
+        'PARSE order_date',
+        NULL,
+        SQLSTATE,
+        SQLERRM,
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END;
+
+    ------------------------------------------------------------
+    -- 3) map enums to your constraints
+    ------------------------------------------------------------
+    -- priority: Low/Medium/High/Urgent/Critical
+    v_priority :=
+      CASE
+        WHEN r.order_priority_raw ILIKE 'low%'      THEN 'Low'
+        WHEN r.order_priority_raw ILIKE 'med%'      THEN 'Medium'
+        WHEN r.order_priority_raw ILIKE 'high%'     THEN 'High'
+        WHEN r.order_priority_raw ILIKE 'urgent%'   THEN 'Urgent'
+        WHEN r.order_priority_raw ILIKE 'critical%' THEN 'Critical'
+        ELSE NULL
+      END;
+
+    IF v_priority IS NULL THEN
+      PERFORM public.log_etl_error(
+        'ordere',
+        'MAP priority',
+        'ordere_priority_check',
+        'ETL_VALIDATION',
+        format('Invalid order_priority: "%s"', COALESCE(r.order_priority_raw,'NULL')),
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END IF;
+
+    -- status: Shipped/Received/Stocking/Pending Payment
+    v_status :=
+      CASE
+        WHEN r.order_status_raw ILIKE 'shipp%'   THEN 'Shipped'
+        WHEN r.order_status_raw ILIKE 'receiv%'  THEN 'Received'
+        WHEN r.order_status_raw ILIKE 'stock%'   THEN 'Stocking'
+        WHEN r.order_status_raw ILIKE 'pending%' THEN 'Pending Payment'
+        ELSE NULL
+      END;
+
+    IF v_status IS NULL THEN
+      PERFORM public.log_etl_error(
+        'ordere',
+        'MAP status',
+        'ordere_status_check',
+        'ETL_VALIDATION',
+        format('Invalid order_status: "%s"', COALESCE(r.order_status_raw,'NULL')),
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END IF;
+
+    -- payment_method: Cash/Credit Card/Debit Card/BNPL/In-App Wallet
+    v_payment :=
+      CASE
+        WHEN r.payment_method_raw ILIKE 'cash%'        THEN 'Cash'
+        WHEN r.payment_method_raw ILIKE 'credit%'      THEN 'Credit Card'
+        WHEN r.payment_method_raw ILIKE 'debit%'       THEN 'Debit Card'
+        WHEN r.payment_method_raw ILIKE 'bnpl%'        THEN 'BNPL'
+        WHEN r.payment_method_raw ILIKE '%wallet%'     THEN 'In-App Wallet'
+        ELSE NULL
+      END;
+
+    IF v_payment IS NULL THEN
+      PERFORM public.log_etl_error(
+        'ordere',
+        'MAP payment_method',
+        'ordere_payment_method_check',
+        'ETL_VALIDATION',
+        format('Invalid payment_method: "%s"', COALESCE(r.payment_method_raw,'NULL')),
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END IF;
+
+    ------------------------------------------------------------
+    -- 4) insert (catch constraint errors & continue)
+    ------------------------------------------------------------
+    BEGIN
+      INSERT INTO public.ordere(order_id, customer_id, order_date, status, priority, payment_method)
+      VALUES (r.order_id, v_customer_id, v_order_date, v_status, v_priority, v_payment)
+      ON CONFLICT (order_id) DO NOTHING;
+
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
+
+      PERFORM public.log_etl_error(
+        'ordere',
+        'INSERT ordere (history backfill)',
+        v_constraint,
+        v_sqlstate,
+        v_msg,
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END;
+
+  END LOOP;
+END;
+$$;
+
+-- re-enable triggers
+ALTER TABLE public.ordere ENABLE TRIGGER trg_enforce_order_date;
+ALTER TABLE public.ordere ENABLE TRIGGER trg_order_status;
+ALTER TABLE public.ordere ENABLE TRIGGER trg_prevent_order_date_update;
+ALTER TABLE public.ordere ENABLE TRIGGER trg_small_business_priority;
+
+COMMIT;
+
+-------------------------------------------------------------------
+  -- order_item
+--------------------------------------------------------------------
+BEGIN;
+
+ALTER TABLE public.order_item DISABLE TRIGGER trg_order_item_set_cost_price;
+ALTER TABLE public.order_item DISABLE TRIGGER trg_set_final_price_at_order_time;
+
+DO $$
+DECLARE
+  r record;
+
+  v_qty int;
+
+  v_constraint text;
+  v_sqlstate   text;
+  v_msg        text;
+BEGIN
+  FOR r IN
+    WITH src AS (
+      SELECT
+        b.order_id,
+
+        -- keep raw text, DON'T CAST here
+        NULLIF(trim(b.order_quantity), '') AS quantity_raw,
+
+        (b.unit_price * (1 - COALESCE(b.discount, 0)))::numeric(12,2) AS final_price_at_order_time,
+        b.unit_cost::numeric(12,2) AS cost_price_at_order_time,
+
+        trim(b.product_name)         AS product_name,
+        trim(b.product_category)     AS product_category,
+        trim(b.product_sub_category) AS product_sub_category
+      FROM public.bdbkala_full b
+      WHERE b.order_id IS NOT NULL
+    ),
+    picked_branch AS (
+      SELECT DISTINCT ON (s.order_id, s.product_name, s.product_category, s.product_sub_category)
+        s.*,
+        bps.branch_name
+      FROM src s
+      JOIN public.branch_product_suppliers bps
+        ON bps.product_name = s.product_name
+       AND bps.category     = s.product_category
+       AND bps.sub_category = s.product_sub_category
+      ORDER BY s.order_id, s.product_name, s.product_category, s.product_sub_category, bps.branch_name
+    ),
+    resolved AS (
+      SELECT
+        pb.order_id,
+        pb.quantity_raw,
+        pb.final_price_at_order_time,
+        pb.cost_price_at_order_time,
+        bp.branch_product_id,
+        pb.product_name, pb.product_category, pb.product_sub_category, pb.branch_name
+      FROM picked_branch pb
+      JOIN public.branch br
+        ON br.name = pb.branch_name
+      JOIN public.category c
+        ON c.name = pb.product_category
+       AND c.parent_category_id IS NULL
+      JOIN public.category sc
+        ON sc.name = pb.product_sub_category
+       AND sc.parent_category_id = c.category_id
+      JOIN public.product p
+        ON p.name = pb.product_name
+       AND p.category_id = sc.category_id
+      JOIN public.branch_product bp
+        ON bp.branch_id  = br.branch_id
+       AND bp.product_id = p.product_id
+    )
+    SELECT * FROM resolved
+  LOOP
+
+    -- 1) validate quantity first (so we don't crash)
+    IF r.quantity_raw IS NULL OR r.quantity_raw !~ '^-?\d+$' THEN
+      PERFORM public.log_etl_error(
+        'order_item',
+        'VALIDATION order_quantity (not integer text)',
+        NULL,
+        'ETL_VALIDATION',
+        format('Invalid integer text for order_quantity: "%s"', COALESCE(r.quantity_raw,'NULL')),
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END IF;
+
+    v_qty := r.quantity_raw::int;
+
+    IF v_qty <= 0 THEN
+      PERFORM public.log_etl_error(
+        'order_item',
+        'VALIDATION order_quantity (<=0)',
+        'order_item_quantity_check',
+        'ETL_VALIDATION',
+        format('Invalid quantity (must be > 0). Got: %s', v_qty),
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END IF;
+
+    -- 2) try the insert; constraint/FK errors go to log table
+    BEGIN
+      INSERT INTO public.order_item(
+        order_id, quantity, return_status,
+        final_price_at_order_time, cost_price_at_order_time,
+        branch_product_id
+      )
+      VALUES (
+        r.order_id,
+        v_qty,
+        NULL,
+        r.final_price_at_order_time,
+        r.cost_price_at_order_time,
+        r.branch_product_id
+      )
+      ON CONFLICT (order_id, branch_product_id) DO NOTHING;
+
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
+
+      PERFORM public.log_etl_error(
+        'order_item',
+        'INSERT order_item (history backfill)',
+        v_constraint,
+        v_sqlstate,
+        v_msg,
+        to_jsonb(r)
+      );
+      CONTINUE;
+    END;
+
+  END LOOP;
+END;
+$$;
+
+ALTER TABLE public.order_item ENABLE TRIGGER trg_order_item_set_cost_price;
+ALTER TABLE public.order_item ENABLE TRIGGER trg_set_final_price_at_order_time;
+
+COMMIT;
 -------------------------------------------------------------------
   -- feedback
 --------------------------------------------------------------------
@@ -714,5 +1085,6 @@ BEGIN
   END LOOP;
 END;
 $$;
+
 
 CALL public.run_staging_load();
