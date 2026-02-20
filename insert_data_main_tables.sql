@@ -545,5 +545,73 @@ JOIN public.customer c
 ON CONFLICT (customer_id) DO UPDATE
 SET balance = EXCLUDED.balance;
 
+DO $$
+DECLARE
+  r record;
+
+  v_constraint text;
+  v_sqlstate   text;
+  v_msg        text;
+BEGIN
+  FOR r IN
+    WITH resolved AS (
+      SELECT
+        rv.order_id,
+        TRUE AS is_public,
+        NULLIF(b.ratings, '')::int AS rating,
+        rv.comment AS comment_text,
+        rv.image   AS image_string,
+        bp.branch_product_id
+      FROM reviews rv
+      JOIN BDBKala_full b
+        ON b.order_id = rv.order_id
+       AND b.product_name = rv.product_name
+       AND b.product_category = rv.product_category
+       AND b.product_sub_category = rv.product_sub_category
+
+      -- self-referencing category: category -> subcategory
+      JOIN category c
+        ON c.name = rv.product_category
+       AND c.parent_category_id IS NULL
+      JOIN category sc
+        ON sc.name = rv.product_sub_category
+       AND sc.parent_category_id = c.category_id
+
+      -- product has name + sub_category_id
+      JOIN product p
+        ON p.name = rv.product_name
+       AND p.category_id = sc.category_id
+
+      -- branch_product has product_id
+      JOIN branch_product bp
+        ON bp.product_id = p.product_id
+    )
+    SELECT DISTINCT *
+    FROM resolved
+  LOOP
+    BEGIN
+      INSERT INTO public.feedback (
+        order_id, is_public, rating, comment_text, image_string, branch_product_id
+      )
+      VALUES (
+        r.order_id, r.is_public, r.rating, r.comment_text, r.image_string, r.branch_product_id
+      );
+
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
+
+      PERFORM public.log_etl_error(
+        'feedback', 'INSERT feedback',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
+END;
+$$;
+
 
 CALL public.run_staging_load();
