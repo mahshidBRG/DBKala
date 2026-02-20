@@ -1,0 +1,127 @@
+"product_id"	"product_name"	"average_rating"
+568	"CampPro Backpack"	5.00
+550	"SunShield Poncho"	5.00
+538	"WindGuard Bottle"	5.00
+216	"ProShot DartBoard"	4.00
+569	"AquaSport Tent"	4.00
+547	"TrailBlazer Backpack"	4.00
+110	"PowerDrive Mat"	4.00
+545	"TrailBlazer Bottle"	4.00
+553	"SunShield Bag"	4.00
+138	"CardioMax Mat"	3.50
+217	"ProShot Board"	3.00
+562	"CampPro Tent"	3.00
+558	"EverTrack Jacket"	3.00
+543	"TrailBlazer Poncho"	3.00
+114	"PowerDrive Band"	2.00
+194	"StrikeForce Runner"	2.00
+549	"SunShield Stove"	2.00
+228	"BalanceFit TennisSet"	2.00
+113	"PowerDrive Barbell"	2.00
+218	"ProShot Bike"	1.00
+192	"StrikeForce Treadmill"	1.00
+556	"EverTrack Stove"	1.00
+205	"SpinMaster Ball"	1.00
+226	"HomeGym Ball"	1.00
+563	"CampPro Stove"	1.00
+124	"GymMaster Mat"	1.00
+221	"HomeGym TennisSet"	1.00
+198	"StrikeForce Ball"	1.00
+223	"HomeGym DartBoard"	1.00
+125	"GymMaster Kettlebell"	1.00
+136	"CardioMax Stepper"	
+137	"CardioMax Rope"	
+139	"CardioMax Kettlebell"	
+140	"CardioMax Dumbbell"	
+141	"CardioMax Barbell"	
+142	"CardioMax Band"	
+193	"StrikeForce TennisSet"	
+195	"StrikeForce DartBoard"	
+196	"StrikeForce Board"	
+197	"StrikeForce Bike"	
+199	"SpinMaster Treadmill"	
+200	"SpinMaster TennisSet"	
+201	"SpinMaster Runner"	
+202	"SpinMaster DartBoard"	
+203	"SpinMaster Board"	
+204	"SpinMaster Bike"	
+206	"SilentStep Treadmill"	
+207	"SilentStep TennisSet"	
+208	"SilentStep Runner"	
+209	"SilentStep DartBoard"	
+210	"SilentStep Board"	
+211	"SilentStep Bike"	
+212	"SilentStep Ball"	
+213	"ProShot Treadmill"	
+214	"ProShot TennisSet"	
+215	"ProShot Runner"	
+219	"ProShot Ball"	
+220	"HomeGym Treadmill"	
+222	"HomeGym Runner"	
+224	"HomeGym Board"	
+225	"HomeGym Bike"	
+227	"BalanceFit Treadmill"	
+229	"BalanceFit Runner"	
+230	"BalanceFit DartBoard"	
+231	"BalanceFit Board"	
+232	"BalanceFit Bike"	
+233	"BalanceFit Ball"	
+534	"WindGuard Tent"	
+535	"WindGuard Stove"	
+536	"WindGuard Poncho"	
+537	"WindGuard Jacket"	
+539	"WindGuard Bag"	
+540	"WindGuard Backpack"	
+541	"TrailBlazer Tent"	
+542	"TrailBlazer Stove"	
+544	"TrailBlazer Jacket"	
+546	"TrailBlazer Bag"	
+548	"SunShield Tent"	
+551	"SunShield Jacket"	
+552	"SunShield Bottle"	
+554	"SunShield Backpack"	
+555	"EverTrack Tent"	
+557	"EverTrack Poncho"	
+559	"EverTrack Bottle"	
+560	"EverTrack Bag"	
+561	"EverTrack Backpack"	
+564	"CampPro Poncho"	
+565	"CampPro Jacket"	
+566	"CampPro Bottle"	
+567	"CampPro Bag"	
+570	"AquaSport Stove"	
+571	"AquaSport Poncho"	
+572	"AquaSport Jacket"	
+573	"AquaSport Bottle"	
+574	"AquaSport Bag"	
+101	"StaminaCore Stepper"	
+575	"AquaSport Backpack"	
+102	"StaminaCore Rope"	
+103	"StaminaCore Mat"	
+104	"StaminaCore Kettlebell"	
+105	"StaminaCore Dumbbell"	
+106	"StaminaCore Barbell"	
+107	"StaminaCore Band"	
+108	"PowerDrive Stepper"	
+109	"PowerDrive Rope"	
+111	"PowerDrive Kettlebell"	
+112	"PowerDrive Dumbbell"	
+115	"IronLift Stepper"	
+116	"IronLift Rope"	
+117	"IronLift Mat"	
+118	"IronLift Kettlebell"	
+119	"IronLift Dumbbell"	
+120	"IronLift Barbell"	
+121	"IronLift Band"	
+122	"GymMaster Stepper"	
+123	"GymMaster Rope"	
+126	"GymMaster Dumbbell"	
+127	"GymMaster Barbell"	
+128	"GymMaster Band"	
+129	"FlexPro Stepper"	
+130	"FlexPro Rope"	
+131	"FlexPro Mat"	
+132	"FlexPro Kettlebell"	
+133	"FlexPro Dumbbell"	
+134	"FlexPro Barbell"	
+135	"FlexPro Band"	

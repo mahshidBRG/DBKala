@@ -1,7 +1,7 @@
 -- 6- This operation calculates the total VAT paid by a customer based on a fixed 10% rate.
 --    Product and customer VAT exemptions are applied multiplicatively to the base rate,
 --    and only finalized orders are included in the calculation.
-CREATE OR REPLACE FUNCTION total_vat_paid_by_customer (p_customer_id INT)
+CREATE OR REPLACE FUNCTION get_total_vat(p_customer_id INT)
 RETURNS NUMERIC
 AS $$
 DECLARE
@@ -31,3 +31,11 @@ BEGIN
     RETURN total_vat;
 END;
 $$ LANGUAGE plpgsql;
+
+
+-- Sample input: 100 (customer with id 100)
+SELECT * FROM total_vat_paid_by_customer(100);
+
+-- Output:
+"total_vat_paid_by_customer"
+40003.74285600

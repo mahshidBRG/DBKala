@@ -69,3 +69,7 @@ JOIN public.branch  b1 ON b1.branch_id = p_branch1_id
 JOIN public.branch  b2 ON b2.branch_id = p_branch2_id
 ORDER BY customer_name;
 $$;
+
+
+-- Sample input: 11, 15
+SELECT * FROM common_customers_between_branches(11, 15);

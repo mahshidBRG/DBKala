@@ -42,3 +42,12 @@ GROUP BY sub_category_name
 ORDER BY sub_category_name;
 $$;
 
+-- Sample input: 'Electronics'
+SELECT * FROM fn_weighted_profit_margin_by_subcategory('Electronics');
+
+-- Output:
+"sub_category_name"	   "weighted_avg_profit_margin"	      "total_quantity"
+
+"Cameras"	                  0.027216	                          58154
+"Laptops"               	  0.605174	                          153007
+"Mobile Phones"         	  0.028441	                          52520

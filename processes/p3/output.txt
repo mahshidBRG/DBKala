@@ -1,0 +1,21 @@
+"customer_id"	"customer_name"	"customer_phone"	"num_orders_last_month"	"total_purchase_last_month"
+182	"Ashley Brown"	"+12276656427"	4	345022.72
+1804	"Susan Phillips"	"+17293687820"	4	338276.70
+243	"Bonnie Yates"	"+12213092729"	4	331581.70
+1286	"Megan Crawford"	"+16828478162"	4	328894.67
+235	"Bethany Yu"	"+16006364729"	4	326315.54
+281	"Brittany Webster"	"+14525259762"	4	324853.85
+1374	"Michelle Ramirez"	"+17327038324"	4	323590.10
+1611	"Ruth Mckay"	"+17348168579"	4	319574.65
+161	"Anne Williams"	"+14945911483"	4	311549.10
+820	"Jessica Clark"	"+14734115077"	4	310182.16
+707	"Heather Patel"	"+18467633971"	4	307535.01
+1425	"Mrs. Katelyn Dixon"	"+19244784489"	3	216669.36
+757	"Jean Fletcher"	"+19518572703"	3	216602.89
+1085	"Laura Barnes"	"+14235252679"	3	211249.36
+1599	"Robin Calderon"	"+12375659100"	3	211217.72
+1326	"Melissa Anderson"	"+17692570297"	3	209974.43
+519	"Denise Brown"	"+14089537726"	3	209934.90
+1937	"Vanessa Carter"	"+14408881865"	3	208641.01
+1839	"Tammy Jacobson"	"+17058374918"	3	201935.47
+1858	"Taylor Johnson"	"+13144054144"	3	199265.26

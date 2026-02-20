@@ -47,3 +47,6 @@ WHERE lma.num_orders_last_month > p_min_orders
   AND lma.total_purchase_last_month > p_min_total_amount
 ORDER BY lma.total_purchase_last_month DESC, lma.num_orders_last_month DESC;
 $$;
+
+-- Sample input: CURRENT_DATE, 2, 1000
+SELECT * FROM high_value_new_customers(CURRENT_DATE, 2, 1000);

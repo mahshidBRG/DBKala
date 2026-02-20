@@ -79,3 +79,11 @@ FROM current_debt cd
 LEFT JOIN loyalty_points lp
   ON lp.customer_id = cd.customer_id;
 $$;
+
+
+-- Sample input: 100, 100000
+SELECT * FROM public.fn_bnpl_credit_check(100,10000);
+
+-- Output:
+"customer_id"	"current_debt"	"debt_limit"	"remaining_credit"	"can_use_bnpl"
+100	              13.51	         64700.00	        64686.49	        true

@@ -31,3 +31,12 @@ WHERE c.name = p_category_name
   AND NULLIF(p.specifications ->> p_attribute_key, '') IS NOT NULL
 ORDER BY distinct_attribute_value;
 $$;
+
+
+-- Sample input: 'Electronics', 'Cameras', 'sensor'
+SELECT * FROM fn_attribute_values_by_category('Electronics', 'Cameras', 'sensor');
+
+-- Output:
+"distinct_attribute_value"
+"CCD"
+"CMOS"
