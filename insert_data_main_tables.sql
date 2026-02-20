@@ -528,7 +528,7 @@ END;
 $$;
 -------------------------------------------------------------------
   -- wallet
---------------------------------------------------------------------
+-------------------------------------------------------------------
 WITH wb_dedup AS (
   SELECT
     lower(trim(customer_email)) AS email,
@@ -545,6 +545,9 @@ JOIN public.customer c
 ON CONFLICT (customer_id) DO UPDATE
 SET balance = EXCLUDED.balance;
 
+-------------------------------------------------------------------
+  -- feedback
+--------------------------------------------------------------------
 DO $$
 DECLARE
   r record;
@@ -613,5 +616,103 @@ BEGIN
 END;
 $$;
 
+-------------------------------------------------------------------
+  -- shipment
+--------------------------------------------------------------------
+DO $$
+DECLARE
+  r record;
+  v_constraint text;
+  v_sqlstate   text;
+  v_msg        text;
+BEGIN
+  FOR r IN
+    WITH src AS (
+      SELECT DISTINCT ON (b.order_id)
+        b.order_id,
+        b.shipping_address,
+        b.shipping_method,
+        b.ship_mode,
+        b.ship_date,
+        b.shipping_cost,
+        b.packaging
+      FROM BDBKala_full b
+      WHERE b.order_id IS NOT NULL
+      ORDER BY b.order_id
+    ),
+    parsed AS (
+      SELECT
+        s.order_id,
+        a.address_id,
+        CASE
+          WHEN lower(s.shipping_method) IN ('same-day','same_day','sameday') THEN 'Same_Day'
+          WHEN lower(s.shipping_method) = 'express' THEN 'Express'
+          ELSE 'Ordinary'
+        END::varchar(20) AS delivery_type,
+        NULLIF(trim(s.ship_mode), '')::varchar(20) AS transport_method,
+
+        CASE
+          WHEN s.ship_date ~ '^\d{4}-\d{2}-\d{2}$' THEN to_date(s.ship_date, 'YYYY-MM-DD')
+          WHEN s.ship_date ~ '^\d{2}-\d{2}-\d{4}$' THEN to_date(s.ship_date, 'DD-MM-YYYY')
+          WHEN s.ship_date ~ '^\d{4}/\d{2}/\d{2}$' THEN to_date(s.ship_date, 'YYYY/MM/DD')
+          WHEN s.ship_date ~ '^\d{2}/\d{2}/\d{4}$' THEN to_date(s.ship_date, 'DD/MM/YYYY')
+          WHEN s.ship_date ~ '^\d{2}\.\d{2}\.\d{4}$' THEN to_date(s.ship_date, 'MM.DD.YYYY') -- ✅
+          ELSE NULL
+        END AS shipping_date,
+
+        s.shipping_cost::numeric(12,2) AS shipping_cost,
+
+        CASE
+          WHEN s.packaging ILIKE '%envelope%' THEN 'Envelope'
+          WHEN s.packaging ILIKE '%box%'      THEN 'Box'
+          ELSE NULL
+        END::varchar(20) AS packaging_type,
+
+        split_part(
+          s.packaging,
+          ' ',
+          array_length(string_to_array(s.packaging, ' '), 1)
+        )::varchar(20) AS packaging_size,
+
+        CASE
+          WHEN s.packaging ILIKE 'bubble envelope%' THEN 'Bubble'
+          ELSE NULL
+        END::varchar(20) AS packaging_material,
+
+        s.ship_date AS ship_date_raw,
+        s.shipping_address AS shipping_address_raw,
+        s.packaging AS packaging_raw
+      FROM src s
+      LEFT JOIN public.address a
+        ON a.recipient_address = s.shipping_address
+    )
+    SELECT * FROM parsed
+  LOOP
+    BEGIN
+      INSERT INTO public.shipment (
+        shipment_id, order_id, address_id, delivery_type, transport_method,
+        shipping_date, shipping_cost, packaging_type, packaging_size, packaging_material
+      )
+      VALUES (
+        nextval('shipment_shipment_id_seq'),
+        r.order_id, r.address_id, r.delivery_type, r.transport_method,
+        r.shipping_date, r.shipping_cost, r.packaging_type, r.packaging_size, r.packaging_material
+      );
+
+    EXCEPTION WHEN OTHERS THEN
+      GET STACKED DIAGNOSTICS
+        v_constraint = CONSTRAINT_NAME,
+        v_sqlstate   = RETURNED_SQLSTATE,
+        v_msg        = MESSAGE_TEXT;
+
+      PERFORM public.log_etl_error(
+        'shipment', 'INSERT shipment',
+        v_constraint, v_sqlstate, v_msg,
+        to_jsonb(r)
+      );
+    END;
+  END LOOP;
+END;
+$$;
 
 CALL public.run_staging_load();
