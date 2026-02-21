@@ -1,0 +1,97 @@
+order_id,reason,review_results,request_date,decision_date,branch_product_id
+26172,Late Delivery,Return Approved,2026-01-08,,577
+25279,Late Delivery,Return Approved,2026-02-08,2026-02-24,2137
+25911,Late Delivery,Return Pending Review,2026-01-31,2026-02-14,530
+25783,Late Delivery,Return Rejected,2026-01-31,2026-02-14,1849
+25978,Damaged,Return Approved,2026-01-22,2026-02-03,1759
+25744,Wrong Item,Return Pending Review,2026-01-21,2026-01-26,2189
+26288,Damaged,Return Rejected,2026-02-22,2026-03-01,1624
+25800,Late Delivery,Return Rejected,2026-02-15,2026-02-25,743
+25719,Damaged,Return Approved,2026-02-26,,1337
+25585,Wrong Item,Return Pending Review,2026-01-12,,1511
+25811,Damaged,Return Pending Review,2026-01-29,2026-02-14,1067
+26363,Damaged,Return Approved,2026-02-16,2026-02-28,896
+25674,Wrong Item,Return Rejected,2026-01-27,2026-02-06,2137
+26051,Late Delivery,Return Approved,2026-02-06,2026-02-17,1978
+25541,Wrong Item,Return Rejected,2026-02-20,2026-03-08,1478
+25631,Damaged,Return Pending Review,2026-02-25,,1759
+25346,Wrong Item,Return Approved,2026-02-18,2026-02-22,122
+25593,Wrong Item,Return Rejected,2026-02-17,2026-03-05,418
+25417,Wrong Item,Return Rejected,2026-02-15,,1978
+26233,Damaged,Return Approved,2026-02-02,,1978
+26190,Late Delivery,Return Pending Review,2026-02-06,2026-02-17,2137
+25634,Wrong Item,Return Approved,2026-01-08,,122
+25936,Late Delivery,Return Approved,2026-02-13,2026-02-27,1849
+26070,Damaged,Return Approved,2026-02-19,2026-02-27,1511
+25767,Wrong Item,Return Approved,2026-02-12,2026-02-26,515
+25345,Damaged,Return Approved,2026-02-15,,1567
+26194,Late Delivery,Return Rejected,2026-02-17,,1978
+26426,Wrong Item,Return Rejected,2026-02-02,,1478
+26087,Late Delivery,Return Rejected,2026-01-18,2026-01-27,1067
+26160,Wrong Item,Return Approved,2026-02-07,2026-03-01,577
+26458,Late Delivery,Return Pending Review,2026-01-19,2026-02-06,1067
+25966,Wrong Item,Return Rejected,2026-02-08,2026-02-18,1067
+26150,Late Delivery,Return Pending Review,2026-02-18,2026-03-03,2137
+25601,Wrong Item,Return Approved,2026-01-09,2026-01-27,515
+25425,Wrong Item,Return Rejected,2026-02-22,2026-03-03,2408
+25636,Late Delivery,Return Approved,2026-02-16,2026-03-02,2137
+26765,Damaged,Return Pending Review,2026-02-26,,149
+25767,Late Delivery,Return Pending Review,2026-02-15,,1849
+25558,Late Delivery,Return Approved,2026-02-18,,418
+25634,Wrong Item,Return Pending Review,2026-01-13,2026-01-19,1567
+25352,Damaged,Return Rejected,2026-01-20,2026-02-04,2189
+26037,Wrong Item,Return Approved,2026-02-06,,515
+25646,Damaged,Return Rejected,2026-02-16,2026-03-02,1978
+25577,Damaged,Return Pending Review,2026-02-03,,1337
+25776,Late Delivery,Return Pending Review,2026-02-03,2026-02-07,175
+25650,Late Delivery,Return Rejected,2026-01-23,2026-02-08,418
+26363,Wrong Item,Return Approved,2026-02-21,,1337
+25660,Damaged,Return Approved,2026-02-08,2026-02-13,1624
+25482,Wrong Item,Return Rejected,2026-02-26,,896
+26106,Damaged,Return Pending Review,2026-01-13,,1759
+25671,Wrong Item,Return Pending Review,2026-02-04,2026-02-14,122
+26174,Damaged,Return Rejected,2026-01-22,2026-01-31,1624
+26429,Wrong Item,Return Rejected,2026-01-25,2026-02-03,530
+25422,Damaged,Return Rejected,2026-02-23,,577
+25348,Late Delivery,Return Approved,2026-02-14,2026-03-03,1478
+25536,Damaged,Return Pending Review,2026-02-12,,515
+25908,Wrong Item,Return Approved,2026-02-21,,1978
+25906,Wrong Item,Return Approved,2026-01-27,,515
+25468,Late Delivery,Return Approved,2026-02-05,2026-02-23,896
+25618,Damaged,Return Pending Review,2026-02-02,2026-02-10,175
+25403,Wrong Item,Return Approved,2026-01-15,2026-02-02,1478
+25676,Wrong Item,Return Rejected,2026-01-29,,1478
+26066,Wrong Item,Return Rejected,2026-01-23,,2408
+26406,Late Delivery,Return Rejected,2026-02-25,,1337
+26198,Damaged,Return Approved,2026-02-05,,577
+25551,Wrong Item,Return Pending Review,2026-01-13,2026-01-21,2137
+26371,Late Delivery,Return Pending Review,2026-01-30,2026-02-12,1978
+25711,Late Delivery,Return Approved,2026-02-17,,122
+26097,Late Delivery,Return Approved,2026-02-07,,577
+25664,Late Delivery,Return Pending Review,2026-01-26,2026-02-13,1978
+25856,Damaged,Return Approved,2026-01-22,2026-02-04,1511
+26019,Late Delivery,Return Rejected,2026-02-06,2026-02-12,530
+25789,Damaged,Return Rejected,2026-01-31,2026-02-09,175
+25804,Damaged,Return Rejected,2026-02-23,,1478
+25403,Damaged,Return Approved,2026-01-19,2026-01-29,418
+26356,Late Delivery,Return Rejected,2026-03-01,2026-03-15,1849
+26032,Wrong Item,Return Pending Review,2026-02-18,2026-03-02,1624
+25873,Late Delivery,Return Approved,2026-02-25,,743
+25347,Late Delivery,Return Approved,2026-01-27,2026-02-07,1511
+26014,Late Delivery,Return Rejected,2026-01-21,,2408
+25366,Wrong Item,Return Rejected,2026-01-21,2026-02-07,1337
+25745,Wrong Item,Return Pending Review,2026-02-18,2026-03-01,1337
+25679,Damaged,Return Rejected,2026-01-22,2026-01-27,515
+25909,Damaged,Return Rejected,2026-02-07,2026-02-23,515
+25823,Damaged,Return Approved,2026-01-16,2026-01-20,577
+26395,Damaged,Return Rejected,2026-01-27,2026-02-11,2189
+25799,Late Delivery,Return Rejected,2026-01-17,2026-02-01,1478
+25761,Damaged,Return Rejected,2026-01-22,2026-02-01,1067
+26451,Damaged,Return Rejected,2026-02-25,2026-03-13,2137
+25666,Damaged,Return Pending Review,2026-02-12,2026-02-24,2408
+25999,Late Delivery,Return Rejected,2026-02-17,,743
+25413,Wrong Item,Return Pending Review,2026-01-29,,1759
+26224,Late Delivery,Return Approved,2026-01-14,2026-01-27,1624
+26017,Late Delivery,Return Approved,2026-02-01,2026-02-12,1624
+25312,Late Delivery,Return Pending Review,2026-02-17,,896
+25825,Wrong Item,Return Pending Review,2026-01-09,,1849
