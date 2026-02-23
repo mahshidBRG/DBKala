@@ -13,7 +13,7 @@ Instructor: Dr. Morteza Amini
 
 | Name        | Role                             | GitHub                                                         |
 | ----------- | -------------------------------- | -------------------------------------------------------------- |
-| Mahshid BRG | Database Design & Implementation | [https://github.com/mahshidBRG](https://github.com/mahshidBRG) |
+| Mahshid     | Database Design & Implementation | [https://github.com/mahshidBRG](https://github.com/mahshidBRG) |
 | Ghazale     | Database Design & Implementation | [https://github.com/Ghazal378](https://github.com/Ghazal378)   |
 
 ---
